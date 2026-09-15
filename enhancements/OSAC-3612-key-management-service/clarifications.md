@@ -150,7 +150,7 @@ The PRD will distinguish reversible access prevention from irreversible key remo
 
 #### Decision (D8)
 
-Revocation prevents new encryption and new consumer associations while retaining prior key versions needed to decrypt or recover existing data. Unsupported operations return an actionable failure through the API and CLI. Destruction is permanent and is allowed only after all attachments are removed. This product-level behavior does not prescribe internal version-selection mechanics.
+Revocation applies to the complete logical key and blocks normal infrastructure encryption, decryption, and new consumer associations across all retained versions. Associated data becomes inaccessible to consumers, while the key material remains retained for an explicit authorized recovery process. Unsupported operations return an actionable failure through the API and CLI. Destruction permanently removes the key material, prevents recovery, and is allowed only after all attachments are removed. This product-level behavior does not prescribe internal version-selection or recovery mechanics.
 
 ---
 
