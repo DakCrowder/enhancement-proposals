@@ -16,6 +16,7 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 - Tenant isolation that restricts Tenant Admins to keys belonging to their tenant without introducing a new restriction on existing Cloud Provider Admin access. [Clarify: R1.Q2] [User]
 - Cloud Provider Admin configuration of platform key backends and policies, applied transparently so tenants do not configure or select KMS infrastructure. [Clarify: R2.Q1, R3.Q1]
 - Key versions and visible lifecycle states, including transparent interim rotation states and retention of prior versions needed by existing encrypted data. Consumers associate with a stable logical key; successful rotation promotes a new active version without requiring consumers to update that association. [Clarify: R1.Q4] [User]
+- Revocation prevents new encryption and new consumer associations while retaining prior key versions needed to decrypt or recover existing data. Unsupported operations return an actionable failure through the API and CLI. [Clarify: R2.Q3] [User]
 - Consumer-neutral key associations and lifecycle safeguards that can support downstream OSAC services without bringing service-specific integration into this feature. [Clarify: R1.Q3, R1.Q5, R2.Q3] [User]
 - End-to-end coverage of the supported API and CLI key-management journeys.
 
@@ -48,7 +49,7 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 - As a Tenant Admin, I want to create tenant-scoped encryption keys through the API or CLI so that my tenant's resources can use centrally managed keys without requiring KMS infrastructure configuration. [Clarify: R1.Q1, R1.Q2, R3.Q1]
 - As a Tenant Admin, I want to view each key's lifecycle state and active version so that I can safely manage keys in my tenant. [Clarify: R2.Q4] [User]
 - As a Tenant Admin, I want to rotate a key and see its interim and resulting states so that I know when a new version is active without requiring associated consumers to select or adopt that version. [Clarify: R1.Q4] [User]
-- As a Tenant Admin, I want to revoke a key from new use without permanently removing it so that recovery and existing-consumer needs can be addressed. [Clarify: R2.Q3]
+- As a Tenant Admin, I want to revoke a key from new encryption and new consumer associations without preventing existing data from being decrypted or recovered so that I can stop new use without losing access to protected data. [Clarify: R2.Q3] [User]
 - As a Tenant Admin, I want to destroy a key permanently when it is not in use and receive an actionable rejection when it remains in use so that obsolete key material can be removed without breaking a consumer. [Clarify: R1.Q3, R2.Q3, R3.Q2] [User]
 - As a Tenant Admin, I want downstream services to associate with a stable logical key so that key rotation does not require each consumer to select or update a key version. [Clarify: R1.Q5] [User]
 - As a Tenant Admin, I want each lifecycle operation to report success or an actionable failure and leave the key in an unambiguous reported state so that I can safely decide what to do next. [Clarify: R3.Q2]
@@ -65,8 +66,8 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 ## Provenance
 
 Authored: draft @ prd 0.10.1 - a7f4aa1, workspace main @ b9575896d
-Final: revise @ prd 0.11.1 - f1d6a4b, workspace osac-4729/cli-user-data-secret-refs @ 329c2a52d
+Final: respond @ prd 0.11.1 - f1d6a4b, workspace osac-4729/cli-user-data-secret-refs @ 329c2a52d
 
-> Context changed between draft and revise.
+> Context changed between draft and respond.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.1","ai_workflows":"f1d6a4b","source_repo":"329c2a52d","source_repo_branch":"osac-4729/cli-user-data-secret-refs","commits_behind_main":0,"commits_ahead_main":1,"main_ref":"main","phases":["draft","draft","respond","respond","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.1","ai_workflows":"f1d6a4b","source_repo":"329c2a52d","source_repo_branch":"osac-4729/cli-user-data-secret-refs","commits_behind_main":0,"commits_ahead_main":1,"main_ref":"main","phases":["draft","draft","respond","respond","revise","revise","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
