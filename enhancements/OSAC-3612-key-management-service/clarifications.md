@@ -245,3 +245,17 @@ Tenant Admins can see a key's lifecycle state and active version. Proactive visi
 ### Decision (D15): Audit scope
 
 Explicit audit-history requirements are removed from this feature because the platform does not currently provide the required audit-log capability. Cloud Infrastructure Admin health and availability responsibilities from D7 remain; the audit-history portion of D7 and D11 is superseded. The success, actionable-failure, and unambiguous-state guarantees from D11 remain.
+
+## Post-Review Decisions — 2026-09-15
+
+### Decision (D16): Cloud Provider Admin key lifecycle authority
+
+Cloud Provider Admins are users of the KMS and can manage the complete lifecycle of provider-owned keys used by platform infrastructure. They do not manage tenant-owned keys, and provider-managed shared or default keys for tenant consumption remain outside this feature. This supersedes the portion of D6 that limited Cloud Provider Admins to backend and policy configuration while preserving the separation between provider-owned and tenant-owned keys.
+
+### Decision (D17): Cloud Infrastructure Admin availability scope
+
+Cloud Infrastructure Admins have read-only visibility into platform KMS health and availability but do not manage tenant-owned or provider-owned key lifecycles. The concrete operational mechanisms used to maintain availability belong to the design rather than the PRD. This refines D7.
+
+### Decision (D18): Preserve existing Cloud Provider Admin access
+
+This feature does not introduce a new restriction preventing Cloud Provider Admins from accessing tenant-owned keys. Cloud Provider Admins can manage provider-owned keys, while their broader access continues to follow the platform's existing administrative authorization model. This supersedes the Cloud Provider Admin restriction introduced by D16 and the portion of D6 that implied Cloud Provider Admins cannot manage tenant-owned keys. The additional ownership and inheritance patterns under consideration for secrets are not added to this feature pending further clarification.

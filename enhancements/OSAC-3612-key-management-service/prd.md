@@ -8,12 +8,12 @@
 
 ## Problem Statement
 
-OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage encryption keys as tenant-scoped resources with distinct lifecycle states. They therefore lack a consistent way to create, rotate, revoke, destroy, and inspect keys for resources consumed across OSAC services. Cloud Provider Admins and Cloud Infrastructure Admins also lack a common product experience for configuring key-management policy and observing key health. Without a consumer-neutral key-management backbone, each consuming service must provide its own key handling and backend integration, leading to duplicated behavior and inconsistent tenant controls.
+OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage encryption keys as tenant-scoped resources with distinct lifecycle states. Cloud Provider Admins likewise cannot manage provider-owned keys used by platform infrastructure. These administrators therefore lack a consistent way to create, rotate, revoke, destroy, and inspect the keys they administer, while Cloud Infrastructure Admins lack a common product experience for observing key health. Without a consumer-neutral key-management backbone, each consuming service must provide its own key handling and backend integration, leading to duplicated behavior and inconsistent administrative controls.
 
 ## In Scope
 
-- A consumer-neutral key-management capability for tenant-owned keys, exposed through the OSAC API and CLI, with create, view, rotate, revoke, and destroy lifecycle operations. [Clarify: R1.Q1, R1.Q5]
-- Tenant isolation that restricts Tenant Admins to keys and usage information belonging to their tenant. [Clarify: R1.Q2]
+- A consumer-neutral key-management capability for tenant-owned and provider-owned keys, exposed through the OSAC API and CLI, with create, view, rotate, revoke, and destroy lifecycle operations. [Clarify: R1.Q1, R1.Q5] [User]
+- Tenant isolation that restricts Tenant Admins to keys belonging to their tenant without introducing a new restriction on existing Cloud Provider Admin access. [Clarify: R1.Q2] [User]
 - Cloud Provider Admin configuration of platform key backends and policies, applied transparently so tenants do not configure or select KMS infrastructure. [Clarify: R2.Q1, R3.Q1]
 - Key versions and visible lifecycle states, including transparent interim rotation states and retention of prior versions needed by existing encrypted data. Consumers associate with a stable logical key; successful rotation promotes a new active version without requiring consumers to update that association. [Clarify: R1.Q4] [User]
 - Consumer-neutral key associations and lifecycle safeguards that can support downstream OSAC services without bringing service-specific integration into this feature. [Clarify: R1.Q3, R1.Q5, R2.Q3] [User]
@@ -22,7 +22,8 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 ## Out of Scope
 
 - A key-management UI. [Clarify: R1.Q1]
-- Direct key lifecycle management by Tenant Users; this feature limits lifecycle authority to Tenant Admins. [Clarify: R1.Q2] [User]
+- Direct key lifecycle management by Tenant Users; this feature limits tenant-owned key lifecycle authority to Tenant Admins. [Clarify: R1.Q2] [User]
+- Provider-managed shared or default keys made available for tenant consumption. [User]
 - Storage-specific Vault KMIP integration and key binding to volumes, file shares, or object buckets; these belong to OSAC-2389. [Jira: OSAC-2389] [Clarify: R1.Q5]
 - Automated key-rotation policies.
 - Hardware Security Module integration beyond Vault capabilities.
@@ -33,13 +34,14 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 
 ### Cloud Provider Admin
 
+- As a Cloud Provider Admin, I want to create and view provider-owned encryption keys through the API or CLI so that platform infrastructure can use centrally managed keys. [User]
+- As a Cloud Provider Admin, I want to rotate, revoke, and safely destroy provider-owned keys with the same visible lifecycle states and safeguards available for tenant-owned keys so that I can manage their complete lifecycle. [User]
 - As a Cloud Provider Admin, I want to configure platform key backends so that tenants can manage keys without needing to understand the supporting infrastructure. [Clarify: R2.Q1, R3.Q1]
-- As a Cloud Provider Admin, I want to configure platform key policies so that tenant key management follows provider requirements across consuming services. [Clarify: R2.Q1]
+- As a Cloud Provider Admin, I want to configure platform key policies so that tenant-owned and provider-owned key management follows provider requirements across consuming services. [Clarify: R2.Q1] [User]
 
 ### Cloud Infrastructure Admin
 
-- As a Cloud Infrastructure Admin, I want read-only visibility into key health so that I can maintain the availability of the platform KMS without managing tenant key lifecycles. [Clarify: R2.Q2]
-- As a Cloud Infrastructure Admin, I want to manage platform KMS availability so that tenant key lifecycle operations remain usable without granting me control over tenant-owned keys. [Clarify: R2.Q2]
+- As a Cloud Infrastructure Admin, I want read-only visibility into platform KMS health and availability so that I can identify conditions affecting key lifecycle operations without gaining control over tenant-owned or provider-owned keys. [Clarify: R2.Q2] [User]
 
 ### Tenant Admin
 
@@ -56,13 +58,15 @@ OSAC can store secrets with envelope encryption, but Tenant Admins cannot manage
 - **Secret Management (OSAC-1567):** Provides the Vault-based secret-management foundation on which key lifecycle management builds.
 - **Vault:** Provides key storage and lifecycle capabilities used by the platform KMS.
 - **Per-Project Encryption Key Management (OSAC-2389):** Depends on this feature's consumer-neutral lifecycle and association capabilities before adding storage-specific KMIP integration and resource binding.
-- **Downstream OSAC services:** Consumers depend on a consistent way to associate their resources with tenant-managed keys; service-specific integration is outside this feature.
+- **Downstream OSAC services:** Consumers depend on a consistent way to associate their resources with managed keys; service-specific integration is outside this feature.
 
 ---
 
 ## Provenance
 
-Authored: respond @ prd 0.10.1 - a7f4aa1, workspace main @ b9575896d
-Phases: draft, draft, respond, respond
+Authored: draft @ prd 0.10.1 - a7f4aa1, workspace main @ b9575896d
+Final: revise @ prd 0.11.1 - f1d6a4b, workspace osac-4729/cli-user-data-secret-refs @ 329c2a52d
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.10.1","ai_workflows":"a7f4aa1","source_repo":"b9575896d","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","draft","respond","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+> Context changed between draft and revise.
+
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.1","ai_workflows":"f1d6a4b","source_repo":"329c2a52d","source_repo_branch":"osac-4729/cli-user-data-secret-refs","commits_behind_main":0,"commits_ahead_main":1,"main_ref":"main","phases":["draft","draft","respond","respond","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
