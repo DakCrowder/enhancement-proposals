@@ -3,7 +3,7 @@
 ## Overview
 
 - **Feature:** OSAC-3612 — Key Management Service: Key Lifecycle Management
-- **Total test cases:** 29
+- **Total test cases:** 30
 - **Requirements covered:** 9 of 9 derived PRD requirement anchors
 - **Interface changes covered:** 7 of 7
 
@@ -141,13 +141,13 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 ##### Steps
 
 1. Make Vault unavailable; call List and Get.
-2. Restore Vault, remove the Transit key without an OSAC Destroy request, and call Get again.
+2. Restore Vault, remove the Transit key without an OSAC Delete request, and call Get again.
 3. Attempt Rotate on the key.
 
 ##### Expected Results
 
 - List and Get both return last-committed key metadata while Vault is unavailable.
-- Get still returns that metadata after the out-of-band deletion, with `destroyed_at` absent; it does not claim to have checked Vault.
+- Get still returns that metadata after the out-of-band deletion; it does not claim to have checked Vault or to have destroyed the OSAC record.
 - Rotate returns `FailedPrecondition` with redacted corrective guidance before changing Vault. OSAC does not label the missing key as an authorized destruction.
 
 ### FR-3: Rotate a logical key while preserving its identity and retained material versions
@@ -279,7 +279,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 - Vault rejects encryption and decryption under the updated key-specific ACL; the Transit key and both material versions still exist.
 - A new normal consumer credential cannot bypass the denied policy, and an unrelated key remains usable.
-- `revoked_at` is set only after denial is verified, `destroyed_at` is absent, and both version metadata records remain.
+- `revoked_at` is set only after denial is verified, and both the OSAC record and material version metadata remain.
 
 #### TC-FR4-02: Authorized recovery restores normal key use
 
@@ -366,7 +366,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - The revoked-key request returns `FailedPrecondition` with reason `KeyNotActive`.
 - Reference validation rejects both requests without producing a canonical key reference.
 
-#### TC-FR5-03: Unreferenced key is destroyed permanently before metadata deletion
+#### TC-FR5-03: Delete destroys an unreferenced key and removes its metadata
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -378,15 +378,16 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Call ManagedKeys Delete before destroying the key.
-2. Run `osac destroy key <key>` and wait for the CLI result.
-3. Verify the provider key is absent and Get reports `destroyed_at`.
-4. Call ManagedKeys Delete for the destroyed key.
+1. Call ManagedKeys Delete for the key and wait for the result.
+2. Verify the Transit key and key-specific policy are absent.
+3. Call Get, List, and Describe for the destroyed key.
+4. Repeat Delete with the same key ID.
 
 ##### Expected Results
 
-- Delete before destruction returns `FailedPrecondition`; Destroy sets `destroyed_at` only after Vault deletion and the database commit succeed.
-- Delete then removes the OSAC metadata.
+- Delete succeeds only after provider deletion and the OSAC record removal commit.
+- Get and Describe return `NotFound`, List omits the key, and the committed change emits an object-deleted event.
+- A repeat after the OSAC row is gone returns `NotFound`, matching Secret Delete; a retry while the row remains is covered by TC-FR9-02.
 
 ### FR-6: Enforce Tenant Admin, Cloud Provider Admin, Tenant User, and Cloud Infrastructure Admin boundaries
 
@@ -478,7 +479,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- Helm values define a `vault-transit` backend, one shared `kms.policy` selecting it with `algorithm=aes256-gcm96`, Vault Enterprise or HCP Vault Dedicated namespaces, and a key-scoped consumer credential path.
+- Helm values define a `vault-transit` backend, one shared `kms.policy` selecting it with `algorithm=aes256-gcm96`, Transit backend with tenant namespaces as the initial certification candidate, and a key-scoped consumer credential path.
 
 ##### Steps
 
@@ -578,9 +579,9 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 ##### Expected Results
 
 - Rotate returns a gRPC error with reason `ProviderPolicyConflict` and a redacted message identifying the corrective configuration category.
-- Get still reports active version `1` with no revocation or destruction timestamp because the provider confirmed no effect.
+- Get still reports active version `1` with no revocation timestamp because the provider confirmed no effect.
 
-#### TC-FR9-02: Failed database commit after Destroy requires operator verification
+#### TC-FR9-02: Failed database commit after Delete can be retried
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -592,15 +593,15 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Call Destroy; let Vault delete the key, then fail the database commit.
-2. Call Get and List, then attempt another Destroy.
-3. Verify Vault absence through operator tooling and follow the destruction repair procedure.
+1. Call Delete; let Vault delete the key, then fail the database commit.
+2. Call Get and List, then retry Delete with the same key ID.
+3. Verify the Transit key, key-specific policy, and OSAC row are absent.
 
 ##### Expected Results
 
-- Destroy returns an error. Get and List still show the last committed key without `destroyed_at`; neither call claims a live Vault check.
-- The next Destroy returns `FailedPrecondition` after observing the missing provider key and does not silently set `destroyed_at`.
-- No reference fence or operation record exists in OSAC-3612; operator verification and repair are needed before metadata deletion.
+- The first Delete returns an error. Get and List still show the last committed key; neither call claims a live Vault check.
+- The retry accepts already absent provider resources, completes any remaining policy cleanup, and commits removal of the OSAC row.
+- No reference fence or operation record exists in OSAC-3612; the first concrete consumer must add the guard and cross-store failure protection.
 
 #### TC-FR9-03: Public API end-to-end lifecycle journey
 
@@ -610,17 +611,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- A deployed Fulfillment Service, PostgreSQL, Keycloak, and supported HashiCorp Vault Transit backend are available.
+- A deployed Fulfillment Service, PostgreSQL, Keycloak, Transit backend are available.
 
 ##### Steps
 
 1. As Tenant Admin, create and view a key.
-2. Rotate, revoke, recover, and destroy the unreferenced key through public lifecycle RPCs.
-3. Delete destroyed metadata.
+2. Rotate, revoke, and recover the key through public lifecycle RPCs, then call Delete on the unreferenced key.
+3. Verify Get returns `NotFound` and List omits the destroyed key.
 
 ##### Expected Results
 
-- Each successful lifecycle RPC returns confirmed version/timestamp fields; a timeout reports that its Vault effect may be uncertain and directs the caller to verification before retry.
+- Create, Rotate, Revoke, and Recover return confirmed key fields; Delete confirms removal with an empty response. A timeout reports that its Vault effect may be uncertain; Delete can retry an existing OSAC row after Vault deletion.
 - Rotation retains the old generation, revocation denies normal Vault Transit use through existing consumer tokens, recovery restores it, and destruction removes the provider key.
 - Cross-tenant and unauthorized access remain denied throughout the journey.
 
@@ -638,19 +639,46 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 1. Create and describe a key.
 2. Rotate, revoke, and recover through synchronous CLI commands.
-3. Destroy the unreferenced key.
+3. Run `osac delete managedkeys <id>` for the unreferenced key; it calls ManagedKeys Delete.
 
 ##### Expected Results
 
 - Every command exits zero only after its requested effect is confirmed and persisted.
-- Describe output reflects active version `2` after rotation, `revoked_at` after revoke, cleared `revoked_at` after recovery, and `destroyed_at` after destruction.
+- Describe output reflects active version `2` after rotation, `revoked_at` after revoke, and cleared `revoked_at` after recovery. After Delete, Describe returns `NotFound` and List omits the key.
 - Any server rejection is printed with its gRPC reason and actionable message.
+
+#### TC-FR9-05: Operator rehearses manual repair after an uncertain rotation
+
+**Tier:** component-integration
+
+**Owner:** [DEV]
+
+| Interface Change | Priority | Automation |
+|-----------------|----------|------------|
+| IC-2 | high | manual |
+
+##### Preconditions
+
+- The operator CLI runbook and a Transit test deployment are available. The test can fail the final PostgreSQL commit after Vault rotates a key.
+
+##### Steps
+
+1. Create a key at version `1`, rotate it in Vault, and fail the final PostgreSQL commit.
+2. Follow the documented OSAC CLI, Vault CLI, and database-tool steps to stop further mutations, capture both states, and reconcile the confirmed generation and version records.
+3. Verify that old material remains usable, the repaired OSAC active version matches Vault, and a subsequent authorized lifecycle operation succeeds.
+4. Repeat with an outcome that may still be in flight and follow the runbook's stop-and-escalate path.
+
+##### Expected Results
+
+- The runbook provides exact executable commands and verification steps for the implemented schema; it does not require guessing backend coordinates or editing key material.
+- The confirmed drift is repaired without deleting retained versions or exposing key material. The ambiguous outcome is not retried or marked repaired without evidence.
+- The procedure records manual repair and possible extra retained versions after an uncertain Rotate as known limitations.
 
 ## Gaps
 
 ### Requirement Coverage Gaps
 
-All derived PRD requirement anchors have test cases. No concrete consumer binding is added by OSAC-3612, so the deployed FR-5 `KeyInUse` check, reference-versus-Destroy race, and failed database commit after Vault deletion with a live reference cannot be exercised here. [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) owns the first storage consumer's reference field, forward validation, reverse Destroy guard, and any durable fence needed to prevent new references after an uncertain deletion. Its `[DEV]` work must cover reference validation, the guard race, and cross-store failure at Unit, Contract, and component-integration tiers; its `[QE]` work must cover the deployed storage binding and blocked destruction journey.
+All derived PRD requirement anchors have test cases. No concrete consumer binding is added by OSAC-3612, so the deployed FR-5 `KeyInUse` check, reference-versus-Delete race, and failed database commit after Vault deletion with a live reference cannot be exercised here. [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) owns the first storage consumer's reference field, forward validation, reverse Delete guard, and any durable fence needed to prevent new references after an uncertain deletion. Its `[DEV]` work must cover reference validation, the guard race, and cross-store failure at Unit, Contract, and component-integration tiers; its `[QE]` work must cover the deployed storage binding and blocked destruction journey.
 
 ### Interface Change Coverage Gaps
 
@@ -660,12 +688,12 @@ All seven interface changes have test cases for behavior delivered by OSAC-3612.
 
 | Metric | Count |
 |--------|-------|
-| Total test cases | 29 |
+| Total test cases | 30 |
 | Critical | 21 |
-| High | 8 |
+| High | 9 |
 | Medium | 0 |
 | Low | 0 |
 | Automated | 29 |
-| Manual | 0 |
+| Manual | 1 |
 | Requirements with test cases | 9 / 9 |
 | Interface changes with test cases | 7 / 7 |
