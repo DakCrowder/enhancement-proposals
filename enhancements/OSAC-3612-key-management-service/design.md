@@ -134,26 +134,20 @@ message ManagedKey {
   google.protobuf.Timestamp revoked_at = 6;   // Present only while confirmed revoked.
   google.protobuf.Timestamp destroyed_at = 7; // Present after confirmed destruction.
   optional string backend_name = 1001 [(cleanapi.field).private = true];
-  optional string backend_object_id = 1002 [(cleanapi.field).private = true];
-  optional string policy_name = 1003 [(cleanapi.field).private = true];
 }
 
 message ManagedKeyVersion {
   uint64 generation = 1; // Monotonic OSAC generation, independent of Vault's version.
   google.protobuf.Timestamp creation_timestamp = 2;
-  repeated BackendVersionReference backend_versions = 1001
-      [(cleanapi.field).private = true];
-}
-
-message BackendVersionReference {
-  option (cleanapi.message).private = true;
-  string object_id = 1;
-  string version_id = 2;
+  string backend_object_id = 1001 [(cleanapi.field).private = true];
+  optional string backend_version_id = 1002 [(cleanapi.field).private = true];
 }
 
 ```
 
-`metadata.tenant` is the sole ownership signal: `system` means a provider-owned key, and any other permitted tenant means a tenant-owned key. The server uses this value to choose the provider or tenant default policy and Vault namespace. `shared` is invalid for ManagedKeys because it is visible to ordinary users and provider-managed keys for tenant consumption are out of scope. The tenant is immutable after creation. `purpose=ENCRYPT_DECRYPT` means the key is for symmetric encryption and decryption; the configured policy fixes `aes256-gcm96`. It does not promise that OSAC exposes cryptographic data-plane RPCs. The latest OSAC-confirmed generation is `active_version`, earlier generations in `versions` are retained, and `destroyed_at` makes every generation unusable; no separate version-state enum is needed. A successful Rotate records every newly observed Vault version as an OSAC generation before the database transaction commits. If the commit fails, no generation is added by `Get`; the operator repair procedure must reconcile the observed versions. Rotation mode, ACL mechanics, and destruction mode remain private provider details. `backend_versions` permits a later provider to map one OSAC generation to replacement objects without changing the public generation or consumer reference. No field contains key material or a client request ID. `[User]` `[Locked: D4, D8, D13, D15, D16]`
+`metadata.tenant` is the sole ownership signal: `system` means a provider-owned key, and any other permitted tenant means a tenant-owned key. The server uses this value to choose the Vault namespace; one deployment-managed policy applies to both ownership types. `shared` is invalid for ManagedKeys because it is visible to ordinary users and provider-managed keys for tenant consumption are out of scope. The tenant is immutable after creation. `purpose=ENCRYPT_DECRYPT` means the key is for symmetric encryption and decryption; the configured policy fixes `aes256-gcm96`. It does not promise that OSAC exposes cryptographic data-plane RPCs. The latest OSAC-confirmed generation is `active_version`, earlier generations in `versions` are retained, and `destroyed_at` makes every generation unusable; no separate version-state enum is needed. A successful Rotate records every newly observed Vault version as an OSAC generation before the database transaction commits. If the commit fails, no generation is added by `Get`; the operator repair procedure must reconcile the observed versions. Each OSAC generation has exactly one private backend material reference: the Vault key name and numeric Transit version, or a replacement object's ID for a provider without separate version IDs. OSAC owns the monotonic generation; backend IDs remain opaque, may differ from that generation, and are never exposed to consumers. A later provider requiring multiple material objects for one generation must establish that need before expanding the private mapping. Rotation mode, ACL mechanics, and destruction mode remain private provider details. No field contains key material or a client request ID. `[User: simplify version mapping]` `[Locked: D4, D8, D13, D15, D16]`
+
+Lifecycle preflight compares the stored private material reference with provider observation; it never assumes that an OSAC generation equals a Vault version number. `[User: simplify version mapping]`
 
 Consumers use the same typed-reference convention as other Fulfillment resources:
 
@@ -171,11 +165,11 @@ Like `Secret`, `ManagedKey` exposes flat fields and reports confirmed Vault effe
 
 PostgreSQL receives one additive key-resource migration:
 
-- `managed_keys`: the standard generic-resource columns plus JSONB `data`. Provider-owned keys use the reserved `system` tenant; tenant-owned keys use their owning tenant. No separate ownership column is needed. The tenant, private backend, and policy assignment are immutable after creation.
+- `managed_keys`: the standard generic-resource columns plus JSONB `data`. Provider-owned keys use the reserved `system` tenant; tenant-owned keys use their owning tenant. No separate ownership column is needed. The tenant and assigned private backend are immutable after creation.
 
 Each concrete consumer adds a reference field and its own forward-validation and reverse-delete guard in the same change. OSAC-3612 defines the reference type but adds no consumer binding, reverse-reference check, or durable destruction fence because the first storage consumer belongs to [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389). That consumer change must make reference admission and Destroy exclusion race-safe, including the case where Vault deletion succeeds but the database commit fails. A private persisted fence may be needed then; its exact form belongs with the concrete consumer design. No generic association table or service is created. `[User]` `[Locked: D3, D5, D8]`
 
-Connection, namespace, mount, authentication, policy, and readiness-check details remain private deployment configuration. The service validates required backend access before admitting key creation and reports ongoing availability through operational metrics, alerts, and redacted logs. Full lifecycle behavior is proven separately by provider conformance tests. No backend status resource is added to the public API. `[User]` `[Locked: D10, D17]`
+Connection, namespace, mount, authentication, policy, and startup-validation details remain private deployment configuration. The service validates required backend access before admitting key creation; existing request metrics and redacted logs show failures during key operations. Full lifecycle behavior is proven separately by provider conformance tests. No backend status resource is added to the public API. `[User: use existing observability]` `[Locked: D10, D17]`
 
 ## 4.3 API Changes
 
@@ -250,22 +244,24 @@ Every mutation uses metadata optimistic locking. Vault's Rotate endpoint does no
 | Persona | ManagedKeys | Consumer references |
 |---------|-------------|---------------------|
 | Tenant Admin | Create/read/update tenant-owned keys in assigned tenants; delete metadata after destruction | Governed by each consumer resource's permissions |
-| Tenant User | No direct key-management access | Governed by each consumer resource's permissions |
+| Tenant User (ordinary client token) | No direct key-management access | Governed by each consumer resource's permissions |
 | Cloud Provider Admin (`is_admin`) | Existing broad access plus provider-owned key lifecycle | Governed by each consumer resource's permissions |
-| Cloud Infrastructure Admin | No key access | No key binding authority |
+| Cloud Infrastructure Admin (ordinary client token) | No direct key-management access | Governed by each consumer resource's permissions |
 | Authorized downstream service | No public lifecycle access | Writes only the consumer resource fields it is authorized to manage |
 
-OPA adds exact method rules for `ManagedKeys`, while existing tenancy logic filters tenant resources. The ManagedKeys create path admits `system` only for Cloud Provider Admins and rejects `shared`; it never accepts an unassigned administrator tenant default. Provider-owned keys are thus identified by `metadata.tenant=system` and do not inherit the visibility of `shared` resources. This feature adds no KMS-specific API permission or realm role for Cloud Infrastructure Admins; their read-only health visibility uses platform monitoring access. `[User]` `[Locked: D2, D12, D16, D17, D18]`
+OPA adds exact method rules for `ManagedKeys`, while existing tenancy logic filters tenant resources. The policy currently distinguishes administrators (`is_admin`), `tenant-admin`, `tenant-idp-manager`, and ordinary clients; it has no Cloud Infrastructure Admin predicate. ManagedKeys methods are granted to `tenant-admin` and the existing unrestricted administrators, and are omitted from client permissions. Thus Tenant Users and Cloud Infrastructure Admins with ordinary client tokens receive the same ManagedKeys denial. A Cloud Infrastructure Admin identity in an existing admin group or admin service account would inherit unrestricted ManagedKeys access, so deployments must keep that persona out of `is_admin` to satisfy the PRD's lifecycle boundary. This feature adds no infrastructure-admin realm role or KMS API grant; read-only health uses platform monitoring access. The ManagedKeys create path admits `system` only for existing administrators and rejects `shared`; it never accepts an unassigned administrator tenant default. Provider-owned keys are thus identified by `metadata.tenant=system` and do not inherit the visibility of `shared` resources. `[Codebase: fulfillment-service/internal/auth/policies/authz.rego]` `[Locked: D2, D12, D16, D17, D18]`
+
+Cloud Infrastructure Admin identities must also lack the `tenant-admin` realm role; that role would receive the planned ManagedKeys grant. `[Locked: D17]`
 
 Recovery currently uses the same lifecycle authority as revocation: Tenant Admin for a tenant-owned key and Cloud Provider Admin under existing administrative access. Whether recovery needs a distinct privilege is an open question in §9.1.
 
 ## 4.8 Extensibility / Future-Proofing
 
-The internal provider registry is keyed by immutable `backend_name`, and every key records its assigned backend/policy privately. Deployment configuration accepts multiple named backends and policies even though only `vault-transit` is initially valid; exactly one tenant default and one provider default are required. Tenants never choose either value. Adding a provider extends the closed backend-type enum and conformance suite rather than the public `ManagedKey` lifecycle.
+The internal provider registry is keyed by immutable `backend_name`, which each key records privately. Deployment configuration accepts named backends and one shared `kms.policy` that selects a backend; only `vault-transit` is initially valid. The same policy applies to tenant-owned and provider-owned keys, while `metadata.tenant` selects their distinct Vault namespaces. The policy may change its selected backend for new keys, but existing keys keep their assigned backend. Tenants never choose either value. Adding a provider extends the closed backend-type enum and conformance suite rather than the public `ManagedKey` lifecycle. `[User: one shared configurable policy]`
 
 The provider conformance suite checks rotation, retained-version access, revocation, recovery, and destruction for `ENCRYPT_DECRYPT` without publishing those mechanics as key fields. OSAC-2389 owns storage-consumer compatibility such as per-tenant key binding, re-encryption, and crypto-erase. If a later provider or key purpose needs a client-visible distinction, add a purpose value or a targeted field then; the logical key ID and version generations remain stable. `[User: lean public contract]` `[Research: Downstream KMIP readiness]`
 
-OSAC material generations are independent of backend object IDs. A KMIP provider may therefore map one generation to a new managed object and replacement link without changing consumers' `ManagedKeyLocalReference` values or the public logical-key ID.
+OSAC material generations are independent of backend object IDs. A KMIP provider may therefore map each generation to a new managed object and replacement link without changing consumers' `ManagedKeyLocalReference` values or the public logical-key ID. The one-reference-per-generation mapping also covers Vault Transit, where every generation has the same backend object ID and a distinct backend version ID. `[User: simplify version mapping]` [KMIP Re-key](https://docs.oasis-open.org/kmip/kmip-spec/v2.1/kmip-spec-v2.1.html) [Vault Transit rotate](https://developer.hashicorp.com/vault/api-docs/secret/transit#rotate-key)
 
 # 5. Interface Changes
 
@@ -303,19 +299,13 @@ Adds the `ManagedKeyLocalReference { id, name }` type for downstream Fulfillment
 
 **Requirements:** FR-7
 
-Adds Helm values and service flags for `kms.enabled`, `kms.defaultTenantPolicy`, `kms.defaultProviderPolicy`, named `kms.backends`, and named `kms.policies`. The initial closed backend type is `vault-transit`; policies fix `aes256-gcm96`, disable export/plaintext backup/automatic rotation, and reference a named backend. Configuration must provide tenant namespace support and an OSAC-managed, key-scoped consumer credential path so revocation cannot be bypassed by a broad Transit grant. Tenants cannot submit backend or policy fields.
+Adds Helm values and service flags for `kms.enabled`, named `kms.backends`, and one required `kms.policy` with a `backend` reference and `algorithm`. The initial closed backend type is `vault-transit`, and the only accepted algorithm is `aes256-gcm96`. The service enforces `exportable=false`, `allow_plaintext_backup=false`, and disabled automatic rotation; these safeguards cannot be relaxed by configuration. The shared policy applies to tenant-owned and provider-owned keys, with separate Vault namespaces selected by ownership rather than separate default policies. Configuration must provide tenant namespace support and an OSAC-managed, key-scoped consumer credential path so revocation cannot be bypassed by a broad Transit grant. Tenants cannot submit backend or policy fields. `[User: one shared configurable policy]`
 
 ## IC-7: Key-management authorization surface
 
 **Requirements:** FR-6
 
-Adds exact OPA method permissions for ManagedKeys. Tenant Admins receive tenant-owned key lifecycle methods, existing administrators retain broad access, and Cloud Infrastructure Admins and ordinary Tenant Users receive no direct key-management methods.
-
-## IC-8: Operational KMS health signals
-
-**Requirements:** FR-7, FR-8
-
-Adds per-backend readiness metrics, alerts, and redacted diagnostic logs for platform operators. Health remains a private service concern; no public backend resource, CLI health command, or KMS-specific Cloud Infrastructure Admin API permission is introduced.
+Adds exact OPA method permissions for ManagedKeys. Tenant Admins receive tenant-owned key lifecycle methods and existing administrators retain broad access. Ordinary client tokens receive no ManagedKeys methods, regardless of whether their holder is a Tenant User or Cloud Infrastructure Admin; infrastructure administrators must not be assigned `tenant-admin` or an existing unrestricted administrator identity. `[Codebase: fulfillment-service/internal/auth/policies/authz.rego]` `[Locked: D17, D18]`
 
 # 6. Alternatives Considered
 
@@ -327,40 +317,25 @@ This minimizes translation and implementation code, but leaks numeric material v
 
 This would simplify revocation, but would exclude HashiCorp Vault Transit despite the PRD's Vault dependency. OSAC instead uses key-specific Vault ACL policies: every normal consumer token is subject to the policy, and terminal revocation requires verified denial of both encryption and decryption. A database-only flag is insufficient because it cannot stop direct Vault use. The extra credential and policy lifecycle is accepted to make Vault the first supported provider. `[User]` `[Locked: D8]`
 
-### Persist a general lifecycle transition marker
-
-A committed marker would make an unresolved Vault call visible on the key and block conflicting mutations after a crash. With synchronous RPCs, users would mainly see it after an error, and it would not make Rotate idempotent or repair database drift. This design instead follows the Secret request transaction and reports uncertainty through the RPC error and live `Get`. A deletion fence is deferred until a concrete consumer needs protection from an uncertain Destroy. `[User: simplify synchronous lifecycle]` `[Codebase: fulfillment-service/internal/servers/private_secrets_server.go]`
-
 ### Use desired-state updates instead of lifecycle RPCs
 
 Declarative updates match the usual Fulfillment API convention but imply eventual convergence and a desired-versus-observed model for operations that Vault itself executes synchronously. Explicit lifecycle RPCs are chosen for this object and report confirmed outcomes before returning success. This is a deliberate exception to the API guideline. `[User]` `[Codebase: fulfillment-service/docs/API.md]`
 
-### Add a separate managed-key association registry
-
-A generic table and private CRUD service could register consumers that do not store a key reference in a Fulfillment resource. For known Fulfillment resources this duplicates their typed reference fields and requires two records to stay in sync. This design uses the established typed-reference and reverse-delete-guard pattern; a registry can be added when a concrete external consumer needs one. `[User]` `[Codebase: fulfillment-service/docs/API.md]`
-
-### Make backend and policy selection tenant-configurable
-
-This offers flexibility but contradicts the requirement that tenants never configure KMS infrastructure and creates migration/fallback semantics not required by this feature. Provider-managed deployment configuration assigns immutable defaults transparently. `[Locked: D10]`
-
 # 7. Observability and Monitoring
 
-The implementation adds these low-cardinality Prometheus metrics:
+Fulfillment already exports `inbound_unary_request_count{service,method,code}` and the `inbound_unary_request_duration` histogram (`_bucket`, `_sum`, and `_count` series with the same labels) on the gRPC server's Prometheus endpoint. Once ManagedKeys is registered, those metrics cover its lifecycle RPC volume, response codes, and request latency without KMS-specific duplicates. Startup KMS configuration validation and failed key operations emit redacted diagnostics. Request metrics reveal backend failures only when a key operation occurs; this release does not add periodic detection of an idle backend outage. `[Codebase: fulfillment-service/internal/metrics/grpc_metrics_interceptor.go]` `[Codebase: fulfillment-service/internal/vault/vault_health.go]` `[User: skip KMS readiness gauge]`
 
-- `osac_kms_backend_ready{backend}` gauge: `1` only when health, authentication, Transit mount, and required policy checks pass.
-- `osac_kms_operation_total{backend,operation,result}` counter: synchronous attempts grouped by normalized result.
-- `osac_kms_operation_duration_seconds{backend,operation}` histogram: provider operation latency.
-- `osac_kms_keys{lifecycle}` gauge: current resource count by lifecycle derived from confirmed timestamps, without tenant or key labels.
+The gRPC deployment serves `/metrics` on port 8002, and its Kubernetes Service advertises that port with Prometheus scrape annotations. Operators can inspect it by port-forwarding `service/fulfillment-grpc-server` port 8002 and requesting `/metrics`. A Prometheus installation must be configured to scrape that Service and grant Cloud Infrastructure Admins read-only access to request metrics and operational logs; the chart currently provides no ServiceMonitor, PrometheusRule, or dashboard. No KMS alert rule or notification route ships with this feature, and the Fulfillment API grants no monitoring role. `[Codebase: fulfillment-service/charts/service/templates/grpc-server/service.yaml]` `[Codebase: fulfillment-service/internal/cmd/service/start/grpcserver/start_grpc_server_cmd.go]` `[User: skip KMS readiness gauge]`
 
-An alert fires when a configured backend remains not ready for five minutes. Cloud Infrastructure Admins use the platform monitoring view of this metric and alert for read-only availability visibility. Structured logs include key ID, backend name, operation, normalized reason, and duration; they exclude tenant-provided descriptions, consumer identities, tokens, provider response bodies, ciphertext, and key material. Confirmed resource changes continue through the generic Events service; failed Vault calls use error responses and operational logs rather than an Events-backed interim state.
+Structured logs include key ID, backend name, operation, normalized reason, and duration; they exclude tenant-provided descriptions, consumer identities, tokens, provider response bodies, ciphertext, and key material.
 
 # 8. Impact and Compatibility
 
-The API, key-resource migration, CLI key commands, metrics, and Helm values are additive. Existing resources and clients remain compatible. `proto/private` is the source; `proto/public` and `proto/gen` are regenerated once and all consumers rebuild against the shared module. This feature defines the reference contract but adds no key-consuming resource or durable destruction fence; [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) adds the first reverse-reference guard and resolves the fence needed when Vault deletion succeeds but PostgreSQL does not commit. `[User]`
+The API, key-resource migration, CLI key commands, and Helm values are additive. Existing resources and clients remain compatible. `proto/private` is the source; `proto/public` and `proto/gen` are regenerated once and all consumers rebuild against the shared module. This feature defines the reference contract but adds no key-consuming resource or durable destruction fence; [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) adds the first reverse-reference guard and resolves the fence needed when Vault deletion succeeds but PostgreSQL does not commit. `[User]`
 
 The initial support target is HashiCorp Vault Enterprise or HCP Vault Dedicated with tenant namespaces and Transit. The existing bundled development backend is not proof of HashiCorp Vault compatibility; a real Vault integration environment must pass provider conformance before release, including existing-token ACL revocation, retained-version decryption after recovery, tenant isolation, rotation, and destruction. Startup validation prevents new key creation if required namespace, mount, credential, or policy checks fail and emits a redacted diagnostic. Existing Vault KV secret behavior is unchanged. [Vault namespaces](https://developer.hashicorp.com/vault/docs/enterprise/namespaces)
 
-Downgrade requires all ManagedKeys to be destroyed and their metadata deleted, followed by removal of KMS configuration. Downgrading the service while live keys remain is unsupported because an older service cannot enforce key lifecycle safeguards. Once consuming resources add key references, their downgrade plan must also remove those references before key management is rolled back. Version skew is tolerated only while older components treat the new proto types as unknown; all API servers must run the same release before key creation is enabled.
+There will be no Downgrade support
 
 # 9. Open Questions
 
@@ -384,8 +359,8 @@ Downgrade requires all ManagedKeys to be destroyed and their metadata deleted, f
 ## Provenance
 
 Authored: draft @ design 0.11.3 - 9b25062, workspace bugfix/osac-5191/mutable-userdata @ 829cb62b7
-Final: revise @ design 0.11.3 - cc0daa6, workspace osac-5618/allow-system-secrets @ 744fd60b5
+Final: revise @ design 0.11.3 - 2bd6607, workspace osac-4749/require-vault @ c241ff5f7
 
 > Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.3","ai_workflows":"cc0daa6","source_repo":"744fd60b5","source_repo_branch":"osac-5618/allow-system-secrets","commits_behind_main":0,"commits_ahead_main":1,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.3","ai_workflows":"2bd6607","source_repo":"c241ff5f7","source_repo_branch":"osac-4749/require-vault","commits_behind_main":0,"commits_ahead_main":6,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","manual-edit","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->

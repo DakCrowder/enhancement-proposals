@@ -5,7 +5,7 @@
 - **Feature:** OSAC-3612 — Key Management Service: Key Lifecycle Management
 - **Total test cases:** 29
 - **Requirements covered:** 9 of 9 derived PRD requirement anchors
-- **Interface changes covered:** 8 of 8
+- **Interface changes covered:** 7 of 7
 
 The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the traceability-only anchors defined in §1 of the design and preserve the PRD requirement text without adding requirements.
 
@@ -418,7 +418,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- The caller is an authenticated Tenant User without the Tenant Admin role.
+- The caller has an ordinary client token without `tenant-admin` or an existing administrator identity.
 
 ##### Steps
 
@@ -456,17 +456,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- The caller has a Cloud Infrastructure Admin identity without Tenant Admin or Cloud Provider Admin privileges.
+- The Cloud Infrastructure Admin caller has an ordinary client token: no `tenant-admin` realm role, no admin group membership, and no admin service-account identity. Read-only platform monitoring access is provisioned separately.
 
 ##### Steps
 
 1. Invoke every ManagedKeys method.
-2. Inspect the role's key-management API permissions.
+2. Inspect the caller's effective key-management API permissions.
 
 ##### Expected Results
 
 - ManagedKeys requests return `PermissionDenied`.
-- The role has no KMS-specific API grant; read-only health is available through platform monitoring access.
+- The policy has no Cloud Infrastructure Admin predicate or KMS-specific API grant; read-only health is available through platform monitoring access.
 
 ### FR-7: Let Cloud Provider Admins configure transparent platform backends and policies without tenant selection
 
@@ -478,18 +478,18 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- Helm values define a `vault-transit` backend, tenant/provider default policies, Vault Enterprise or HCP Vault Dedicated namespaces, and a key-scoped consumer credential path.
+- Helm values define a `vault-transit` backend, one shared `kms.policy` selecting it with `algorithm=aes256-gcm96`, Vault Enterprise or HCP Vault Dedicated namespaces, and a key-scoped consumer credential path.
 
 ##### Steps
 
 1. Deploy the service with the configuration.
-2. Wait for backend readiness validation.
+2. Wait for startup configuration validation.
 3. Create one tenant-owned and one provider-owned key.
 
 ##### Expected Results
 
-- Key creation is admitted only after the required Vault access, mount, namespace, and policy checks pass; `osac_kms_backend_ready{backend}` reports `1`. Provider conformance tests separately exercise rotation, revocation, recovery, and destruction against the supported Vault deployment.
-- Each key privately records the configured immutable backend and corresponding default policy.
+- Key creation is admitted only after the required Vault access, mount, namespace, and policy checks pass. Provider conformance tests separately exercise rotation, revocation, recovery, and destruction against the supported Vault deployment.
+- Both keys use the shared policy, are created in their ownership-specific Vault namespaces, and privately record the selected backend, which remains immutable for each key.
 - Tenant-facing requests contain no backend or policy selector.
 
 #### TC-FR7-02: Invalid or incapable backend blocks key creation
@@ -505,15 +505,15 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 ##### Steps
 
 1. Start the Fulfillment Service.
-2. Read the backend readiness metric and redacted service diagnostic.
+2. Read the redacted service diagnostic.
 3. Attempt to create a ManagedKey.
 
 ##### Expected Results
 
-- The readiness metric is `0`, and the diagnostic identifies the missing access or configuration category without sensitive details.
+- The diagnostic identifies the missing access or configuration category without sensitive details.
 - ManagedKey creation returns `FailedPrecondition` naming the unavailable required capability without exposing credentials or raw provider responses.
 
-#### TC-FR7-03: Configuration rejects ambiguous defaults and unsupported backend types
+#### TC-FR7-03: Configuration rejects invalid shared policy and unsupported backend types
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -525,38 +525,38 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Validate values containing two tenant defaults.
-2. Validate a policy referencing a missing backend.
+1. Validate values missing the required shared policy.
+2. Validate a shared policy referencing a missing backend or selecting an unsupported algorithm.
 3. Validate an unsupported backend type.
 
 ##### Expected Results
 
 - Each configuration fails validation with the offending field path.
-- No deployment manifest is accepted with ambiguous defaults, dangling references, or an unknown backend enum.
+- No deployment manifest is accepted with a missing policy, dangling backend reference, unsupported algorithm, or unknown backend type.
 
 ### FR-8: Give Cloud Infrastructure Admins read-only KMS health and availability visibility
 
-#### TC-FR8-01: Monitoring reports backend availability without key data
+#### TC-FR8-01: Existing monitoring shows key-operation failures without key data
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
-| IC-8 | high | automated |
+| — | high | automated |
 
 ##### Preconditions
 
-- A configured backend can be made reachable and unreachable during the test.
+- A configured backend can be made reachable and unreachable during the test. Prometheus scrapes the Fulfillment gRPC metrics Service; a Cloud Infrastructure Admin has read-only access to request metrics and operational logs. A separate Tenant Admin can create keys.
 
 ##### Steps
 
-1. Observe the backend readiness metric while HashiCorp Vault is ready.
-2. Seal or stop Vault and wait for the next probe.
-3. Observe the metric, alert, and redacted diagnostic after the backend becomes unavailable.
+1. As the Tenant Admin, create a ManagedKey while Vault is ready; as the Cloud Infrastructure Admin, inspect the ManagedKeys `Create` request count and response code in Prometheus.
+2. Seal or stop Vault, then as the Tenant Admin attempt to create another ManagedKey.
+3. As the Cloud Infrastructure Admin, inspect the `Create` request count and response code in Prometheus and the redacted failure diagnostic in operational logs.
 
 ##### Expected Results
 
-- The readiness metric changes from `1` to `0`; the alert fires after the configured five-minute interval, and the diagnostic gives a normalized reason.
-- Cloud Infrastructure Admins can view these signals through platform monitoring access.
-- Metrics and diagnostics contain no tokens, certificates, tenant key counts, or tenant key identities.
+- `inbound_unary_request_count{service,method,code}` records the successful and failed ManagedKeys `Create` calls through the existing metrics Service on port 8002; the failed call has a non-OK response code and a redacted diagnostic identifying the backend failure category.
+- The Cloud Infrastructure Admin can view these request signals and diagnostics without gaining ManagedKeys lifecycle access.
+- Metrics and diagnostics contain no tokens, certificates, tenant key counts, or tenant key identities. No KMS-specific gauge, periodic probe, or alert is required; an idle backend outage is not detected by these request metrics.
 
 ### FR-9: Return confirmed success or actionable failure, distinguish uncertain provider outcomes from committed key state, and cover API/CLI journeys
 
@@ -654,7 +654,7 @@ All derived PRD requirement anchors have test cases. No concrete consumer bindin
 
 ### Interface Change Coverage Gaps
 
-All interface changes have test cases for behavior delivered by OSAC-3612. IC-5's deployed consumer enforcement is deferred to OSAC-2389 as described above.
+All seven interface changes have test cases for behavior delivered by OSAC-3612. FR-8 uses existing operational interfaces and has no new interface change. IC-5's deployed consumer enforcement is deferred to OSAC-2389 as described above.
 
 ## Summary
 
@@ -668,4 +668,4 @@ All interface changes have test cases for behavior delivered by OSAC-3612. IC-5'
 | Automated | 29 |
 | Manual | 0 |
 | Requirements with test cases | 9 / 9 |
-| Interface changes with test cases | 8 / 8 |
+| Interface changes with test cases | 7 / 7 |
