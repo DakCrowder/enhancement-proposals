@@ -97,11 +97,11 @@ The public lifecycle is derived from confirmed facts, not a separate state machi
 |------------------|-----------------------------------------------|
 | Create | Publish the key with generation `1` after Vault and PostgreSQL succeed; a rolled-back create is not listed and may leave an orphaned Vault object. |
 | Rotate | Append every newly observed material generation; the final element of `versions` becomes the current confirmed generation, and earlier generations remain listed. |
-| Revoke | Set `revocation_timestamp` after the ACL change and access denial are verified. |
-| Recover | Clear `revocation_timestamp` after normal access is verified. |
+| Revoke | Set `state=REVOKED` and `revocation_timestamp` after the ACL change and access denial are verified. |
+| Recover | Set `state=ACTIVE` and clear `revocation_timestamp` after normal access is verified. |
 | Delete | Stage removal of the OSAC record, delete the Vault key and its key-specific policy, then commit the database deletion. |
 
-`revocation_timestamp` is server-set: present means OSAC last confirmed revocation; absent means its last committed state is active. `revocation_trigger` is the caller-supplied request token. Recover clears the timestamp. `Get` and `List` show committed OSAC state without checking Vault. Vault may still change after a failed call; a later authorized Update can record verified effects. Unverifiable differences need operator review. Delete removes the record and emits the usual deletion event; no destroyed state or operation history is retained. `[User: simplify synchronous lifecycle; reconcile verified provider effects on retry]` `[Locked: D8, D15, D19]`
+The server initializes `state=ACTIVE` on Create. `state` is the last committed OSAC access state, while `revocation_timestamp` is present only when OSAC last confirmed `REVOKED`; it records OSAC verification time, not when Vault first applied the policy. `last_rotation_timestamp` records the most recent OSAC-confirmed rotation, including a version observed on retry. The committed `action_request` identifies the last successfully handled action; there is no separate result or condition. `Get` and `List` show committed OSAC state without checking Vault. Vault may still change after a failed call; a later authorized Update can record verified effects. Unverifiable differences need operator review. Delete removes the record and emits the usual deletion event; no destroyed state or operation history is retained. `[User: explicit active/revoked state, action request, synchronous lifecycle; reconcile verified provider effects on retry]` `[Locked: D8, D15, D19]`
 
 ### Transit mapping
 
@@ -109,17 +109,17 @@ The public lifecycle is derived from confirmed facts, not a separate state machi
 |-------------|------------------------|--------------|
 | Create | `POST /{mount}/keys/{opaque-name}` with `aes256-gcm96`, `exportable=false`, `allow_plaintext_backup=false`; create a key-specific consumer ACL policy | Read key and policy; latest version is 1 and configuration matches policy |
 | Rotate | Rotate only if Vault has not already advanced | Read and record all versions; check that older versions remain usable |
-| Revoke | Replace the key-specific consumer policy's cryptographic path grants with explicit `deny` rules; retain the Transit key and every version | Read policy and verify a previously issued consumer token cannot encrypt or decrypt any retained version; only then set `revocation_timestamp` |
-| Recover | Restore grants if needed | Verify the policy and consumer access before clearing `revocation_timestamp` |
+| Revoke | Replace the key-specific consumer policy's cryptographic path grants with explicit `deny` rules; retain the Transit key and every version | Read policy and verify a previously issued consumer token cannot encrypt or decrypt any retained version; only then set `state=REVOKED` and `revocation_timestamp` |
+| Recover | Restore grants if needed | Verify the policy and consumer access before setting `state=ACTIVE` and clearing `revocation_timestamp` |
 | Delete | If the key exists, set `deletion_allowed=true` and call `DELETE /{mount}/keys/{opaque-name}`; remove the key-specific ACL policy | Verify that the key and policy are absent; then commit removal of the OSAC record. An already absent key or policy is accepted on retry. |
 
 Backend names are deterministic (`osac-<managed-key-uuid>`) and never derived from tenant-provided names. The adapter treats an existing name with mismatched immutable configuration as `CONFLICT`; it never adopts or overwrites an out-of-band key.
 
-The per-key policy covers every enabled cryptographic path for that key, including encrypt, decrypt, rewrap, data-key generation, HMAC, sign, and verify where applicable. Its `deny` rules override ordinary grants. Every normal consumer credential carries this policy; only a restricted management credential may change it. On policy failure, OSAC leaves `revocation_timestamp` unchanged and returns an error. An authorized retry verifies or reapplies the intended policy. Unverifiable access needs operator review. `[Locked: D8]` [Vault policies](https://developer.hashicorp.com/vault/docs/concepts/policies)
+The per-key policy covers every enabled cryptographic path for that key, including encrypt, decrypt, rewrap, data-key generation, HMAC, sign, and verify where applicable. Its `deny` rules override ordinary grants. Every normal consumer credential carries this policy; only a restricted management credential may change it. On policy failure, OSAC leaves the committed `state` and `revocation_timestamp` unchanged and returns an error. An authorized retry verifies or reapplies the intended policy. Unverifiable access needs operator review. `[Locked: D8]` [Vault policies](https://developer.hashicorp.com/vault/docs/concepts/policies)
 
 ## 4.2 Data Model / Schema Changes
 
-The editable private proto defines the public shape; `cleanapi` removes private provider fields from generated public protos. These proposed definitions use the existing `Metadata`, `google.protobuf.Timestamp`, and `cleanapi` types; omitted imports and service annotations follow the existing resource protos. The public usage follows [Google Cloud KMS's `CryptoKeyPurpose`](https://github.com/googleapis/googleapis/blob/master/google/cloud/kms/v1/resources.proto#L59). No asynchronous operation resource or interim transition field is defined. `[User]` `[Codebase: proto/private/osac/private/v1]`
+The editable private proto defines the public shape; `cleanapi` removes private provider fields from generated public protos. These proposed definitions use the existing `Metadata`, `google.protobuf.Timestamp`, and `cleanapi` types; omitted imports and service annotations follow the existing resource protos. The public usage follows [Google Cloud KMS's `CryptoKeyPurpose`](https://github.com/googleapis/googleapis/blob/master/google/cloud/kms/v1/resources.proto#L59). The source package remains `osac.private.v1`, with `cleanapi` generating `osac.public.v1`. The flat key shape follows the existing Secret exception to the usual spec/status resource pattern. No asynchronous operation resource or interim transition field is defined. `[User: keep the flat key resource and synchronous flow]` `[Codebase: proto/private/osac/private/v1]`
 
 ```protobuf
 enum ManagedKeyUsage {
@@ -127,17 +127,41 @@ enum ManagedKeyUsage {
   MANAGED_KEY_USAGE_ENCRYPT_DECRYPT = 1;
 }
 
+enum ManagedKeyState {
+  MANAGED_KEY_STATE_UNSPECIFIED = 0;
+  MANAGED_KEY_STATE_ACTIVE = 1;
+  MANAGED_KEY_STATE_REVOKED = 2;
+}
+
 message ManagedKey {
   string id = 1;
   Metadata metadata = 2;
   ManagedKeyUsage usage = 3; // Immutable; ENCRYPT_DECRYPT only in this release.
-  repeated ManagedKeyVersion versions = 4; // Nonempty; ascending by generation. Last is current.
-  google.protobuf.Timestamp revocation_timestamp = 5; // Server-set confirmation time; absent when active.
-  google.protobuf.Timestamp rotation_trigger = 6; // Caller-set change token requesting rotation.
-  google.protobuf.Timestamp revocation_trigger = 7; // Caller-set change token requesting revocation.
-  google.protobuf.Timestamp recovery_trigger = 8; // Caller-set change token requesting recovery.
+  ManagedKeyState state = 4; // Server-set last confirmed access state.
+  repeated ManagedKeyVersion versions = 5; // Nonempty; ascending by generation. Last is current.
+  google.protobuf.Timestamp revocation_timestamp = 6; // Last OSAC-confirmed revocation time, if any.
+  google.protobuf.Timestamp last_rotation_timestamp = 7; // Last OSAC-confirmed rotation, if any.
+  ManagedKeyActionRequest action_request = 8; // Caller-set one-shot request; committed only on success.
   KeyBackend backend = 9 [(cleanapi.field).private = true];
 }
+
+message ManagedKeyActionRequest {
+  // Caller-generated change trigger; only the last committed number is remembered.
+  // Value isn't important, only the change.
+  // Difference in stored state initiates an action on update request
+  int action_trigger = 1;
+  oneof action {
+    ManagedKeyRotateAction rotate = 2;
+    ManagedKeyRevokeAction revoke = 3;
+    ManagedKeyRecoverAction recover = 4;
+  }
+}
+
+// Message fields used to preserve ability to add action specific behavior or timestamps for scheduling
+// in the future
+message ManagedKeyRotateAction {}
+message ManagedKeyRevokeAction {}
+message ManagedKeyRecoverAction {}
 
 message ManagedKeyVersion {
   uint64 generation = 1;
@@ -156,11 +180,11 @@ enum KeyBackend {
 
 `metadata.tenant` determines ownership and Vault namespace: `system` is provider-owned; another permitted tenant is tenant-owned. One deployment-managed policy applies to both. `shared` is invalid, and the tenant cannot change. `usage=ENCRYPT_DECRYPT` fixes `aes256-gcm96` but adds no cryptographic data-plane RPC.
 
-Each committed key has ordered `versions`; the last is current. Rotate adds one OSAC generation for each new Vault version, including versions verified on retry. A failed commit leaves `Get` unchanged. Earlier versions remain listed while revoked. Delete removes the key and all versions; no `active_version` or version-state enum is needed.
+Each committed key has ordered `versions`; the last is current. Rotate adds one OSAC generation for each new Vault version, including versions verified on retry. A failed commit leaves `Get` unchanged. Earlier versions remain listed while revoked. Delete removes the key and all versions; no separate `active_version` or per-version state enum is needed.
 
-Each generation privately maps to one backend material reference: the Vault key name and Transit version, or a replacement object ID for another provider. OSAC generations increase monotonically but need not equal backend version numbers. A provider needing multiple objects per generation would require a wider private mapping. Backend coordinates and lifecycle mechanics remain private; no key material or request ID appears in the resource. `[User: simplify version mapping; reconcile verified provider effects on retry]` `[Locked: D4, D8, D13, D15, D16]` `[Review: PR 319, jhernand]`
+Each generation privately maps to one backend material reference: the Vault key name and Transit version, or a replacement object ID for another provider. OSAC generations increase monotonically but need not equal backend version numbers. A provider needing multiple objects per generation would require a wider private mapping. Backend coordinates and lifecycle mechanics remain private; no key material or separate operation ID appears in the resource. `[User: simplify version mapping; reconcile verified provider effects on retry]` `[Locked: D4, D8, D13, D15, D16]` `[Review: PR 319, jhernand]`
 
-The three trigger timestamps are caller-supplied change tokens, not execution times or desired-state fields. The server stores a new value only after the corresponding Vault effect and database write are confirmed. `Get` and `List` show the last committed trigger values alongside the system-owned `revocation_timestamp`; they do not claim that Vault was rechecked. `[Review: PR 319, jhernand]`
+`action_request` combines a caller-generated `action_trigger` and exactly one action. The server commits the request only after the corresponding Vault effect and database write are confirmed. `state=ACTIVE` on Create, `state=REVOKED` with `revocation_timestamp` on confirmed Revoke, and `state=ACTIVE` with no `revocation_timestamp` on confirmed Recover. Rotate leaves `state` unchanged and sets `last_rotation_timestamp` when OSAC verifies the new versions; that timestamp remains after Revoke and Recover. These timestamps record OSAC verification rather than necessarily the original provider effect time. The last committed request and these server fields distinguish confirmed success from an uncommitted attempt; no result or condition is needed. `Get` and `List` show these last-committed values without claiming Vault was rechecked. The optional Revoke reason remains in the resource only until the next successful action replaces `action_request`; it is not an audit history. A future action message can gain an execution-time field, but accepting one would require durable pending work and a scheduler; this release accepts immediate requests only. `[User: explicit active/revoked state and action-specific request; no scheduling or interim states]` `[Review: PR 319, jhernand]`
 
 Lifecycle preflight compares the stored private material reference with provider observation; it never assumes that an OSAC generation equals a Vault version number. `[User: simplify version mapping]`
 
@@ -176,7 +200,7 @@ message ManagedKeyLocalReference {
 
 `ManagedKeyLocalReference` identifies the stable logical key, never a material generation. A consumer stores it in its own resource, such as `spec.managed_key`, and the server resolves its `id` and `name` within the authorized tenant scope. The consumer's Create/Update validation rejects cross-tenant, revoked, missing, or backend-drifted keys and takes a shared lock on the key row. The same consumer change must add a reverse-reference check to `ManagedKeys.Delete`, including soft-deleted versus active-resource semantics, under an incompatible key-row lock. This matches the existing Secret reference and delete-guard pattern. No consumer-specific fields or list of consumers appear on `ManagedKey`. `[User]` `[Locked: D3, D5, D13, D14]` `[Codebase: fulfillment-service/docs/API.md]` `[Codebase: fulfillment-service/internal/database/migrations/111_add_secret_delete_protection_trigger.up.sql]`
 
-Like `Secret`, `ManagedKey` exposes flat fields and reports confirmed Vault effects synchronously. It has no separate operation record, transition field, or exactly-once retry semantics. Create has no precommitted reservation: if Vault creates a key but PostgreSQL does not commit, the provider object is orphaned and must be found and removed through operator tooling. `[User]` `[Codebase: proto/private/osac/private/v1/secret_type.proto]`
+Like `Secret`, `ManagedKey` exposes flat fields and reports confirmed Vault effects synchronously. It has no pending operation state, separate operation record, or exactly-once retry semantics. Create has no precommitted reservation: if Vault creates a key but PostgreSQL does not commit, the provider object is orphaned and must be found and removed through operator tooling. `[User: keep flat shape and synchronous flow]` `[Codebase: proto/private/osac/private/v1/secret_type.proto]`
 
 PostgreSQL receives one additive key-resource migration:
 
@@ -190,16 +214,16 @@ Connection, namespace, mount, authentication, policy, and startup-validation det
 
 ### ManagedKeys service
 
-`osac.public.v1.ManagedKeys` and its private counterpart implement only the standard `Create`, `List`, `Get`, `Update`, and `Delete` methods at `/api/fulfillment/v1/managed_keys`. `Update` handles rotation, revocation, and recovery through changes to trigger fields on the key. `Delete` maps to HTTP `DELETE /api/fulfillment/v1/managed_keys/{id}` and removes both the provider key and the OSAC record, like Secret Delete. The existing CLI delete command exposes this as `osac delete managedkeys <id>`. These are additive APIs. `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]` `[Codebase: fulfillment-service/internal/cmd/cli/delete/delete_cmd.go]`
+`osac.public.v1.ManagedKeys` and its private counterpart implement only the standard `Create`, `List`, `Get`, `Update`, and `Delete` methods at `/api/fulfillment/v1/managed_keys`. `Update` handles rotation, revocation, and recovery through a changed `action_request` on the key. `Delete` maps to HTTP `DELETE /api/fulfillment/v1/managed_keys/{id}` and removes both the provider key and the OSAC record, like Secret Delete. The existing CLI delete command exposes this as `osac delete managedkeys <id>`. These are additive APIs. `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]` `[Codebase: fulfillment-service/internal/cmd/cli/delete/delete_cmd.go]`
 
-- `Create` requires `metadata.name` and defaults `usage=ENCRYPT_DECRYPT`, the only supported usage in this release. A Tenant Admin may omit `metadata.tenant` to use their authorized tenant or set it to an authorized tenant. A Cloud Provider Admin must specify a tenant: `system` creates a provider-owned key, while an ordinary tenant creates a tenant-owned key under existing broad administrative access. Only Cloud Provider Admins may create in `system`; `shared` is always rejected. This explicit rule prevents the generic administrator default of `shared` from creating a broadly visible key. The server rejects caller-supplied trigger fields, `revocation_timestamp`, versions, or provider fields. It publishes the key only after Vault creation and the database result are confirmed.
-- `Update` uses the standard `{ object, update_mask, lock }` request and returns the updated key. For lifecycle changes, the server requires `lock=true` and the last observed `metadata.version`. A changed `rotation_trigger`, `revocation_trigger`, or `recovery_trigger` named in `update_mask` requests that effect. A lifecycle Update must change exactly one trigger and cannot include metadata edits or another trigger in the same mask; an unchanged trigger value causes no provider effect. Create requests with triggers and malformed lifecycle Updates return `InvalidArgument`. The timestamps serve as change tokens, so the server does not require them to match its clock. Ordinary Updates may change only `metadata.display_name` and `metadata.description`. Tenant, usage, `revocation_timestamp`, versions, and provider fields remain immutable or system-owned. `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]`
+- `Create` requires `metadata.name` and defaults `usage=ENCRYPT_DECRYPT`, the only supported usage in this release. A Tenant Admin may omit `metadata.tenant` to use their authorized tenant or set it to an authorized tenant. A Cloud Provider Admin must specify a tenant: `system` creates a provider-owned key, while an ordinary tenant creates a tenant-owned key under existing broad administrative access. Only Cloud Provider Admins may create in `system`; `shared` is always rejected. This explicit rule prevents the generic administrator default of `shared` from creating a broadly visible key. The server rejects caller-supplied `action_request`, `state`, lifecycle timestamps, versions, or provider fields. It publishes the key with `state=ACTIVE`, no lifecycle timestamps, and no `action_request` only after Vault creation and the database result are confirmed.
+- `Update` uses the standard `{ object, update_mask, lock }` request and returns the updated key. For lifecycle changes, the server requires `lock=true` and the last observed `metadata.version`. A changed `action_request` named alone in `update_mask` requests its selected `oneof` action. The request must contain a nonempty `action_trigger` and exactly one of `rotate`, `revoke`, or `recover`; an absent request or action, an empty ID, or a Revoke reason over 256 characters returns `InvalidArgument`. A lifecycle Update cannot include metadata edits in the same mask. The same request ID and action payload as the last committed request cause no provider effect; the same ID with a different payload is invalid. A new ID requests another effect. Only the last committed ID is retained, so this is not an all-time deduplication guarantee. Create requests with an action request and malformed lifecycle Updates return `InvalidArgument`. Ordinary Updates may change only `metadata.display_name` and `metadata.description`. Tenant, usage, `state`, lifecycle timestamps, versions, and provider fields remain immutable or system-owned. `[User: action-specific request and explicit state]` `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]`
 - Lifecycle Updates serialize on the key row. Before acting, the server compares Vault with OSAC. It records complete new versions only when configuration matches and older versions remain usable. If a Rotate request finds new versions, it succeeds without another POST. Missing or incompatible state returns `FailedPrecondition`. Rotate and Revoke require an active key; Recover requires a revoked key. A timed-out Rotate may still finish after a retry.
 - Delete accepts active or revoked keys. OSAC-3612 has no consumer reference to check. Beginning with OSAC-2389, Delete must return `FailedPrecondition/KeyInUse` while an active supported consumer references the key, without revealing consumer identities. `[User]` `[Locked: D3, D14]`
 - Like `PrivateSecretsServer.Delete`, ManagedKeys `Delete` stages the database deletion, deletes the provider resource in the same request, and commits the database transaction only after provider success. The stored key still supplies tenant authorization, backend coordinates, and the reference guard on retry. If the Vault key or policy is already absent, Delete treats that part as complete, verifies absence, and commits the OSAC deletion. A repeat after the OSAC deletion has committed returns `NotFound`, as Secret Delete does; the provider-side retry is idempotent while the OSAC row remains. `[Codebase: fulfillment-service/internal/servers/private_secrets_server.go]`
 - `Get` and `List` return tenant-filtered last-committed database metadata without a Vault call. They do not add `ManagedKeyVersion` records, repair a failed lifecycle write, or guarantee that Vault still matches the stored state. After a lost response or process crash, a caller may see stale metadata if the transaction rolled back, or `NotFound` if Delete committed. An existing row permits a Delete retry; an uncertain Rotate requires provider verification before retry. Neither method exposes backend coordinates, credentials, or key bytes.
 
-A lifecycle Update succeeds only after Vault verification and database commit. A proven no-effect failure leaves the key unchanged. An uncertain provider or commit result returns an actionable error; `Get` still shows committed OSAC state. A later authorized Update can record verified Vault changes. Repeating a committed trigger does nothing, but an overlapping Rotate retry may create an extra version. Vault owns material and policy; PostgreSQL owns identity, tenant, and committed metadata. `[User]` `[Review: PR 319, jhernand]`
+A lifecycle Update succeeds only after Vault verification and database commit. A proven no-effect failure leaves the key unchanged. An uncertain provider or commit result returns an actionable error; `Get` still shows committed OSAC state. A later authorized Update can record verified Vault changes. Repeating the last committed request ID and payload does nothing, but an overlapping Rotate retry may create an extra version. Vault owns material and policy; PostgreSQL owns identity, tenant, and committed metadata. `[User]` `[Review: PR 319, jhernand]`
 
 Example rotation `Update` request, shown as JSON:
 
@@ -208,14 +232,17 @@ Example rotation `Update` request, shown as JSON:
   "object": {
     "id": "7e24b74d-7dd4-4ff1-86bb-503d37f112d3",
     "metadata": { "version": 4 },
-    "rotation_trigger": "2026-09-29T12:00:00Z"
+    "action_request": {
+      "action_trigger": 7,
+      "rotate": {}
+    }
   },
-  "update_mask": "rotation_trigger",
+  "update_mask": "action_request",
   "lock": true
 }
 ```
 
-Success returns generations `1` and `2`. If Vault rotates but the database commit fails, `Get` still shows `1`; a retry with `lock=true` can verify and record `2` without another Rotate POST. If the first POST is still running, a retry may rotate twice. A proven no-effect failure leaves generation `1` current.
+Success returns generations `1` and `2`, the committed `action_request`, `state=ACTIVE`, and `last_rotation_timestamp`. If Vault rotates but the database commit fails, `Get` still shows `1` and the previous `action_request`; a retry with `lock=true` can verify and record `2` without another Rotate POST. If the first POST is still running, a retry may rotate twice. A proven no-effect failure leaves generation `1` current.
 
 ### Consumer reference contract
 
@@ -241,7 +268,7 @@ Version metadata remains with the key. Historical material metadata grows linear
 - Policies force `exportable=false`, `allow_plaintext_backup=false`, and disable automatic Transit rotation. Destruction temporarily enables only the provider-side deletion flag required for the selected key.
 - Backend names use UUIDs rather than user input, preventing path injection and tenant-name disclosure. Endpoint, mount, namespace, and consumer-reference fields receive length and character validation before use.
 - Provider calls use tenant-scoped Vault namespaces and least-privilege policies limited to the configured Transit mount. Provider-owned keys use a provider namespace inaccessible to tenant tokens. Normal consumer tokens are key-scoped and cannot modify their ACL policy; only the management identity can change revocation policy.
-- Status and error messages are redacted: they may name the normalized backend and reason but not tokens, certificate data, raw provider responses, consumer identities, or key bytes.
+- Status and error messages are redacted: they may name the normalized backend and machine-readable failure reason but not caller-supplied Revoke explanations, tokens, certificate data, raw provider responses, consumer identities, or key bytes. An optional Revoke explanation is stored with the committed `action_request` and visible only through normal tenant-authorized resource reads and events.
 - A consumer's reference field is validated under that resource's existing authorization and tenancy rules; possession of a key ID alone does not authorize a binding.
 
 ## 4.6 Failure Handling and Recovery
@@ -290,25 +317,25 @@ OSAC material generations are independent of backend object IDs. A KMIP provider
 
 **Requirements:** FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-9
 
-Adds public and private `ManagedKeys` CRUD. A changed lifecycle trigger in an Update performs or verifies Rotate, Revoke, or Recover; Delete removes the Vault key and OSAC record. Success confirms both Vault and database effects. A retry with `lock=true` checks Vault and records verified effects, though an in-flight Rotate may later add a version. See §§4.2–4.3. `[Review: PR 319, jhernand]`
+Adds public and private `ManagedKeys` CRUD. A changed `action_request` in an Update performs or verifies Rotate, Revoke, or Recover; Delete removes the Vault key and OSAC record. Success confirms both Vault and database effects. A retry with `lock=true` checks Vault and records verified effects, though an in-flight Rotate may later add a version. See §§4.2–4.3. `[Review: PR 319, jhernand]`
 
 ## IC-2: ManagedKey lifecycle status and Events payloads
 
 **Requirements:** FR-2, FR-3, FR-4, FR-9
 
-Adds usage, versions, three lifecycle triggers, and a server-set revocation timestamp. Object events report committed changes. `Get` and `List` show committed metadata; an authorized Update can record verified missing versions or the requested policy state. Other differences fail. No operation history, key material, or backend coordinates appear publicly. See §§4.2 and 4.6.
+Adds usage, versions, server-set `ACTIVE`/`REVOKED` state, revocation and last-rotation timestamps, and one action-specific request stored only on confirmed success. Object events report committed changes. `Get` and `List` show committed metadata; an authorized Update can record verified missing versions or the requested policy state. Other differences fail. No operation history, key material, or backend coordinates appear publicly. See §§4.2 and 4.6.
 
 ## IC-3: OSAC CLI key inspection commands
 
 **Requirements:** FR-1, FR-2, FR-6
 
-Adds `osac create key`, `osac list keys`, and `osac describe key`. The existing global `--tenant` flag selects the key's tenant; `osac --tenant system create key` is available only to Cloud Provider Admins. Describe derives active/revoked from the last committed `revocation_timestamp` value and derives the current generation from the final `versions` element. It shows `metadata.tenant`, usage, and current and retained generations. After successful Delete, Describe returns `NotFound`. The output does not claim to verify current Vault state.
+Adds `osac create key`, `osac list keys`, and `osac describe key`. The existing global `--tenant` flag selects the key's tenant; `osac --tenant system create key` is available only to Cloud Provider Admins. Describe reads the last committed `state` and derives the current generation from the final `versions` element. It shows `metadata.tenant`, usage, and current and retained generations. After successful Delete, Describe returns `NotFound`. The output does not claim to verify current Vault state.
 
 ## IC-4: OSAC CLI key lifecycle commands
 
 **Requirements:** FR-3, FR-4, FR-5, FR-9
 
-Adds `osac rotate key`, `osac revoke key`, and `osac recover key`; each CLI command reads the key, changes the corresponding trigger, and calls the standard locked `Update`. The existing generic `osac delete managedkeys <id>` command calls ManagedKeys `Delete`. Commands return when the synchronous Update or Delete completes and print the confirmed result: current revocation and the final confirmed generation for retained keys, or successful removal for Delete. On timeout they say the provider outcome may be uncertain; a Delete retry can finish deleting an existing OSAC row after provider deletion, while a repeated rotation Update may create another retained version. `--wait` is unnecessary.
+Adds `osac rotate key`, `osac revoke key`, and `osac recover key`; each CLI command reads the key, submits an `action_request` with a newly generated request ID and the corresponding action, and calls the standard locked `Update`. Revoke accepts an optional `--reason` passed through to `revoke.reason`. The existing generic `osac delete managedkeys <id>` command calls ManagedKeys `Delete`. Commands return when the synchronous Update or Delete completes and print the confirmed result: current key state and the final confirmed generation for retained keys, or successful removal for Delete. On timeout they say the provider outcome may be uncertain; a Delete retry can finish deleting an existing OSAC row after provider deletion, while a repeated rotation Update may create another retained version. `--wait` is unnecessary.
 
 ## IC-5: ManagedKey local reference contract
 
@@ -340,7 +367,7 @@ This would simplify revocation, but would exclude HashiCorp Vault Transit despit
 
 ### Use separate lifecycle RPCs
 
-Separate Rotate, Revoke, and Recover RPCs would expand the public service beyond standard CRUD. Trigger fields instead request these actions through Update. The server applies or verifies the effect before committing the trigger and key state. This needs no operation resource or controller, but Rotate retries may still add extra versions. Delete remains the standard method. `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]`
+Separate Rotate, Revoke, and Recover RPCs would expand the public service beyond standard CRUD. The single `action_request` instead selects an action through Update. The server applies or verifies the effect before committing the request, state, and lifecycle timestamps. This needs no operation resource or controller, but Rotate retries may still add extra versions. Delete remains the standard method. `[Review: PR 319, jhernand]` `[Codebase: fulfillment-service/docs/API.md]`
 
 # 7. Observability and Monitoring
 
@@ -348,7 +375,7 @@ Fulfillment already exports `inbound_unary_request_count{service,method,code}` a
 
 Deployments grant Cloud Infrastructure Admins read-only platform monitoring access to existing request metrics and redacted operational logs. This feature adds no KMS-specific alert, dashboard, or Fulfillment API monitoring role. `[User: keep observability focused on existing signals]`
 
-Structured logs include key ID, backend name, operation, normalized reason, and duration; they exclude tenant-provided descriptions, consumer identities, tokens, provider response bodies, ciphertext, and key material.
+Structured logs include key ID, backend name, operation, normalized failure reason, and duration; they exclude tenant-provided descriptions and Revoke explanations, consumer identities, tokens, provider response bodies, ciphertext, and key material.
 
 # 8. Impact and Compatibility
 
@@ -367,4 +394,4 @@ Final: revise @ design 0.11.3 - 2bd6607, workspace osac-2990/secret-docs @ 4109e
 
 > Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.3","ai_workflows":"2bd6607","source_repo":"4109eb41e","source_repo_branch":"osac-2990/secret-docs","commits_behind_main":0,"commits_ahead_main":3,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.3","ai_workflows":"2bd6607","source_repo":"4109eb41e","source_repo_branch":"osac-2990/secret-docs","commits_behind_main":0,"commits_ahead_main":3,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
