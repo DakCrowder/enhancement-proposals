@@ -3,11 +3,11 @@
 ## Overview
 
 - **Feature:** OSAC-3612 — Key Management Service: Key Lifecycle Management
-- **Total test cases:** 32
-- **Requirements covered:** 9 of 9 derived PRD requirement anchors
-- **Interface changes covered:** 7 of 7
+- **Total test cases:** 41
+- **Requirements covered:** 10 of 10 derived PRD requirement anchors
+- **Interface changes covered:** 9 of 9
 
-The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the traceability-only anchors defined in §1 of the design and preserve the PRD requirement text without adding requirements.
+The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the traceability-only anchors defined in §1 of the design; FR-10 reflects the added initial-release direct crypto requirement.
 
 ## Test Cases
 
@@ -124,7 +124,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Expected Results
 
-- Events show the committed Create and Rotate changes, with no interim operation event. The Rotate payload includes the committed `action_request.request_id` and `last_rotation_timestamp`.
+- Events show the committed Create and Rotate changes, with no interim operation event. The Rotate payload includes the committed `action_request.action_trigger` and `last_rotation_timestamp`.
 - The final payload lists generations `1` and `2` in ascending order; the final element is the current confirmed generation.
 - No event includes a Transit mount, backend object ID, credential, or key material.
 
@@ -142,7 +142,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 1. Make Vault unavailable; call List and Get.
 2. Restore Vault, remove the Transit key without an OSAC Delete request, and call Get again.
-3. Attempt a locked Update with a new `action_request` containing `rotate` and a request ID.
+3. Attempt a locked Update with a new `action_request` containing `rotate` and an action trigger.
 
 ##### Expected Results
 
@@ -164,7 +164,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Call Update with `lock=true`, the current metadata version, `update_mask=action_request`, and a new `request_id` with `rotate: {}`.
+1. Call Update with `lock=true`, the current metadata version, `update_mask=action_request`, and a new nonzero `action_trigger` with `rotate: {}`.
 2. Inspect the successful response.
 3. Read the key again.
 
@@ -172,7 +172,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 - The ManagedKey ID is unchanged.
 - `versions` contains generations `1` and `2` in ascending order, with `2` current; no `active_version` or destruction timestamp is set. `state` remains `ACTIVE` and `revocation_timestamp` stays absent.
-- The committed `action_request` echoes the request ID and selected `rotate` action; `last_rotation_timestamp` records OSAC verification. There is no interim operation field or completed-operation history.
+- The committed `action_request` echoes the action trigger and selected `rotate` action; `last_rotation_timestamp` records OSAC verification. There is no interim operation field or completed-operation history.
 
 #### TC-FR3-02: A second completed Rotate is a new operation
 
@@ -186,7 +186,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Call Update again with `lock=true`, the current metadata version, and `rotate: {}` with a new `request_id` in `action_request`.
+1. Call Update again with `lock=true`, the current metadata version, and `rotate: {}` with a new `action_trigger` in `action_request`.
 2. Read Transit and the ManagedKey.
 
 ##### Expected Results
@@ -206,14 +206,14 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Submit `action_request={request_id, rotate: {}}` in a locked Update from version `1`; let Vault create version `2`, then fail the database commit.
+1. Submit `action_request={action_trigger: 2, rotate: {}}` in a locked Update from version `1`; let Vault create version `2`, then fail the database commit.
 2. Call Get and List, and inspect the persisted version records.
 3. Retry Update with `lock=true` after the database recovers.
 
 ##### Expected Results
 
 - The RPC fails; List and PostgreSQL still show only confirmed version `1`.
-- Before retry, Get shows version `1`, the previous `action_request`, and no new rotation timestamp. The retry records Vault version `2`, the request ID, and `last_rotation_timestamp` without another Rotate POST.
+- Before retry, Get shows version `1`, the previous `action_request`, and no new rotation timestamp. The retry records Vault version `2`, the action trigger, and `last_rotation_timestamp` without another Rotate POST.
 
 #### TC-FR3-04: CLI rotation reports confirmed completion
 
@@ -247,8 +247,8 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Submit `action_request={request_id, rotate: {}}` in a locked Update and let the client time out while the first Transit POST is held.
-2. Retry the locked Update with the same action, request ID, and metadata version; let the second Transit POST finish first.
+1. Submit `action_request={action_trigger: 2, rotate: {}}` in a locked Update and let the client time out while the first Transit POST is held.
+2. Retry the locked Update with the same action, action trigger, and metadata version; let the second Transit POST finish first.
 3. Release the first POST, call Get, then send a new Rotate Update.
 4. Repeat with OSAC at version `7` and Vault at `14`, with versions `8` through `14` present.
 
@@ -257,7 +257,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - The retry sends a second POST and records version `2`; the delayed first POST then creates version `3` while Get still shows `2`.
 - The next Update with `lock=true` records version `3` without another POST. In step 4, it records all seven missing versions.
 
-#### TC-FR3-06: Action requests require one action and a new ID in a locked Update
+#### TC-FR3-06: Action requests require one action and a new trigger in a locked Update
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -271,14 +271,14 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 1. Attempt Create with `action_request` set.
 2. Attempt to change `action_request` through Update with `lock=false`.
-3. Attempt locked Updates with an absent request, an empty `request_id`, no selected `oneof` action, a Revoke reason over 256 characters, or `action_request` combined with a metadata edit.
-4. After a successful Rotate, send a locked Update with the same request ID and `rotate: {}`, then reuse that ID with `revoke: {}`.
+3. Attempt locked Updates with an absent request, a zero `action_trigger`, no selected `oneof` action, or `action_request` combined with a metadata edit.
+4. After a successful Rotate, send a locked Update with the same action trigger and `rotate: {}`, then reuse that trigger with `revoke: {}`.
 5. Attempt to set `state`, `revocation_timestamp`, or `last_rotation_timestamp` in an Update.
 
 ##### Expected Results
 
 - Create and malformed Updates return `InvalidArgument`; `lock=false` is rejected under the locked Update contract. None has a Vault effect or changes committed state.
-- Repeating the last committed ID and action has no Vault effect. Reusing that ID with another action returns `InvalidArgument`.
+- Repeating the last committed trigger and action has no Vault effect. Reusing that trigger with another action returns `InvalidArgument`.
 - Caller writes to `state` or lifecycle timestamps are rejected.
 - `ManagedKeys` exposes no separate Rotate, Revoke, or Recover methods.
 
@@ -296,14 +296,14 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Submit `action_request={request_id, revoke: {reason: "retired"}}` in a locked Update and wait for the synchronous response.
+1. Submit `action_request={action_trigger: 3, revoke: {}}` in a locked Update and wait for the synchronous response.
 2. Use the pre-existing consumer token to attempt Vault Transit encrypt and decrypt against both retained versions.
 
 ##### Expected Results
 
 - Vault rejects encryption and decryption under the updated key-specific ACL; the Transit key and both material versions still exist.
 - A new normal consumer credential cannot bypass the denied policy, and an unrelated key remains usable.
-- `state` becomes `REVOKED` and `revocation_timestamp` is set only after denial is verified. The committed `action_request` echoes the request ID and Revoke reason. The OSAC record and material versions remain.
+- `state` becomes `REVOKED` and `revocation_timestamp` is set only after denial is verified. The committed `action_request` echoes the action trigger and Revoke action. The OSAC record and material versions remain.
 
 #### TC-FR4-02: Authorized recovery restores normal key use
 
@@ -317,12 +317,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Submit `action_request={request_id, recover: {}}` in a locked Update and wait for the synchronous response.
+1. Submit `action_request={action_trigger: 4, recover: {}}` in a locked Update and wait for the synchronous response.
 2. Get the key and perform a Vault Transit encrypt/decrypt round trip using a consumer token that existed before revocation.
 
 ##### Expected Results
 
-- Success changes `state` to `ACTIVE`, clears `revocation_timestamp`, and commits the Recover action request without changing the ID, final `versions` element, or `last_rotation_timestamp`. The prior Revoke reason no longer appears on the resource; no interim operation field is exposed.
+- Success changes `state` to `ACTIVE`, clears `revocation_timestamp`, and commits the Recover action request without changing the key ID, final `versions` element, or `last_rotation_timestamp`. No interim operation field is exposed.
 - The restored key-specific policy permits the round trip and returns the original plaintext to the fixture.
 - Existing version metadata remains present.
 
@@ -338,12 +338,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Run `osac revoke key cli-key --reason retired`.
+1. Run `osac revoke key cli-key`.
 2. Run `osac recover key cli-key`.
 
 ##### Expected Results
 
-- Revoke exits zero only when `state=REVOKED`, `revocation_timestamp`, and the matching Revoke request with reason `retired` are committed.
+- Revoke exits zero only when `state=REVOKED`, `revocation_timestamp`, and the matching Revoke request are committed.
 - Recover exits zero only when `state=ACTIVE`, absent `revocation_timestamp`, and the matching Recover request are committed.
 - Both commands print the confirmed lifecycle state; Revoke includes its confirmation timestamp.
 
@@ -373,7 +373,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ### FR-5: Define consumer-neutral key references and reject destruction while a consumer remains attached
 
-#### TC-FR5-01: ManagedKeyLocalReference resolves a stable same-tenant key
+#### TC-FR5-01: ManagedKeyLocalReference resolves a stable same-project key
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -381,11 +381,11 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- An active tenant-owned key exists in `tenant-a`, and a reference-validation unit fixture has an owning resource in that tenant.
+- An active tenant-owned key exists in project `p1` of `tenant-a`, and a reference-validation unit fixture has an owning resource in that tenant and project.
 
 ##### Steps
 
-1. Resolve `ManagedKeyLocalReference { name: "data-key" }` in the fixture's tenant scope.
+1. Resolve `ManagedKeyLocalReference { name: "data-key" }` in the fixture's tenant and project scope.
 2. Rotate the key and resolve the reference again using its canonical ID.
 
 ##### Expected Results
@@ -393,7 +393,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - Resolution fills the key ID and name, matching the existing typed-reference convention.
 - The canonical ID is unchanged after rotation; no material generation or backend coordinate appears in the reference.
 
-#### TC-FR5-02: Key reference validation enforces tenant and lifecycle state
+#### TC-FR5-02: Key reference validation enforces tenant, project, and lifecycle state
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -401,18 +401,20 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- One active key exists in `tenant-a`, one revoked key exists in `tenant-b`, and the reference-validation fixture can run under either tenant.
+- One active key exists in project `p1` of `tenant-a`, one revoked key exists in project `p1` of `tenant-b`, and the reference-validation fixture can run under either tenant and in named projects.
 
 ##### Steps
 
 1. Resolve the `tenant-a` key from a `tenant-b` fixture.
 2. Resolve the revoked `tenant-b` key from the `tenant-b` fixture.
+3. Resolve the active `tenant-a` key from a fixture in project `p2` of `tenant-a`.
 
 ##### Expected Results
 
 - The cross-tenant reference returns `InvalidArgument` with reason `TenantMismatch`.
 - The revoked-key request returns `FailedPrecondition` with reason `KeyNotActive`.
-- Reference validation rejects both requests without producing a canonical key reference.
+- The cross-project reference returns `InvalidArgument` with reason `ProjectMismatch`.
+- Reference validation rejects all three requests without producing a canonical key reference.
 
 #### TC-FR5-03: Delete destroys an unreferenced key and removes its metadata
 
@@ -621,7 +623,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Steps
 
-1. Submit a new `action_request={request_id, rotate: {}}` in a locked Update.
+1. Submit a new `action_request={action_trigger: 5, rotate: {}}` in a locked Update.
 2. Get the ManagedKey after the synchronous RPC fails.
 
 ##### Expected Results
@@ -664,7 +666,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 ##### Steps
 
 1. As Tenant Admin, create and view a key.
-2. Rotate, revoke, and recover the key through three locked public Updates, each with `update_mask=action_request`, a new request ID, and one action message, then call Delete on the unreferenced key.
+2. Rotate, revoke, and recover the key through three locked public Updates, each with `update_mask=action_request`, a new action trigger, and one action message, then call Delete on the unreferenced key.
 3. Verify Get returns `NotFound` and List omits the destroyed key.
 
 ##### Expected Results
@@ -719,26 +721,159 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - The Update returns `FailedPrecondition` without adopting incomplete history or sending another Rotate POST.
 - The runbook identifies the missing version and blocks further mutation; it neither invents a version nor exposes key material.
 
+### FR-10: Discover visible keys and encrypt or decrypt small payloads through API and CLI
+
+#### TC-FR10-01: Discovery follows tenant and project visibility
+
+- **Tier:** component-integration
+- **Owner:** [DEV]
+- **Interface Change:** IC-7, IC-8
+- **Priority:** high
+- **Automation:** automated
+
+**Preconditions:** Tenant `a` has active keys in its default project, named project `p1`, and sibling project `p2`. An encrypt-role JWT belongs to tenant `a` and has membership in `p1` but not `p2`; a different identity belongs to tenant `b`, which has a key. Fulfillment and PostgreSQL run for real.
+
+**Steps:** List keys, Get each ID, then Encrypt by ID. Try tenant `b`'s key with the tenant `a` JWT. Repeat with a JWT lacking either crypto role. Attempt to create a key in an invisible named project as Tenant Admin.
+
+**Expected results:** The caller discovers tenant `a` default and `p1` keys, but neither lists nor gets the `p2` or tenant `b` keys. Encrypt on either hidden key returns `NotFound`, including when its ID is known. The caller without a crypto role cannot List or Get. Create in an invisible project is rejected before Vault creates a key. A parent-project membership also exposes descendant-project keys.
+
+#### TC-FR10-02: Encrypt and decrypt roles are independent
+
+- **Tier:** Unit
+- **Owner:** [DEV]
+- **Interface Change:** IC-7, IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Steps:** Evaluate OPA and public handler authorization for encrypt-only, decrypt-only, both-role, Tenant Admin without crypto roles, ordinary client, and unrestricted administrator identities against a visible key. Also test a user with an encrypt realm role and organization claims for tenants `a` and `b`, including keys in each tenant and an invisible project.
+
+**Expected results:** Each crypto role grants only its named operation plus Get/List; neither grants Create, Update, or Delete. The multi-tenant user can Encrypt visible keys in both claimed tenants, following existing realm-role semantics, but cannot access an invisible project. Tenant Admin lifecycle authority alone grants neither crypto operation. Existing unrestricted administrators retain both. Missing operation permission returns `PermissionDenied` without a Vault call.
+
+#### TC-FR10-03: API round trip, payload limits, and input errors
+
+- **Tier:** component-integration
+- **Owner:** [DEV]
+- **Interface Change:** IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Preconditions:** Fulfillment, PostgreSQL, REST gateway, Keycloak, and Transit run for real with an active key and tenant-scoped crypto-role JWT.
+
+**Steps:** Encrypt and decrypt binary data through gRPC and REST, including a 65536-byte plaintext. Submit empty and 65537-byte plaintext, ciphertext longer than 131072 bytes, malformed ciphertext, and ciphertext from another key.
+
+**Expected results:** Round trips recover identical bytes; REST represents plaintext bytes as base64. Encrypt returns an opaque Vault ciphertext string and confirmed generation `1`. Invalid inputs and failed decryption return redacted `InvalidArgument`, with no payload in events or persisted key data. Crypto calls do not increment key metadata version.
+
+#### TC-FR10-04: Rotation switches encryption and retains decryption
+
+- **Tier:** component-integration
+- **Owner:** [DEV]
+- **Interface Change:** IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Preconditions:** A real Transit key has confirmed generation `1`; provider conformance tests can observe Vault requests and force a failed OSAC commit after Rotate.
+
+**Steps:** Encrypt before and after a successful Rotate, decrypt both ciphertexts, then rotate Vault while failing the OSAC commit and Encrypt again before reconciliation.
+
+**Expected results:** The successful Rotate makes Encrypt use generation `2`, and both generation `1` and `2` ciphertexts decrypt. After an uncommitted Rotate, Encrypt explicitly selects the backend version mapped to the last OSAC-confirmed generation; it never silently uses Vault's new latest version. No existing ciphertext is re-encrypted.
+
+#### TC-FR10-05: Revocation, recovery, and destruction control crypto use
+
+- **Tier:** Contract
+- **Owner:** [DEV]
+- **Interface Change:** IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Preconditions:** A real Transit key has two retained generations, ciphertext from each, and a previously issued key-scoped consumer token.
+
+**Steps:** Revoke, try Encrypt and Decrypt for both generations through OSAC and the previously issued Vault token, Recover, retry, then Delete and retry.
+
+**Expected results:** Revoke denies both operations for every version through both paths. Recover permits new encryption and decryption of retained ciphertext. After Delete, both OSAC methods return `NotFound`; previously stored ciphertext is permanently undecryptable. The management credential is not used for direct crypto.
+
+#### TC-FR10-06: Crypto calls serialize with lifecycle changes and deny uncertain access
+
+- **Tier:** component-integration
+- **Owner:** [DEV]
+- **Interface Change:** IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Steps:** Hold an Encrypt call in Vault while Revoke begins; release it and observe completion order. Separately fail the OSAC commit after Vault applies Revoke or Recover, then attempt both crypto methods.
+
+**Expected results:** Revoke confirms only after the in-flight Encrypt finishes, and subsequent crypto calls fail. When OSAC still says active but Vault denies after failed Revoke commit, no call succeeds. When OSAC still says revoked but Vault allows after failed Recover commit, no call succeeds. A provider outage returns `Unavailable` without claiming a state change.
+
+#### TC-FR10-07: Crypto payloads stay out of logs
+
+- **Tier:** Unit
+- **Owner:** [DEV]
+- **Interface Change:** IC-8
+- **Priority:** critical
+- **Automation:** automated
+
+**Steps:** Invoke server and client logging interceptors with Encrypt and Decrypt requests and responses while body logging is enabled, including with redaction disabled. Inspect structured error, metric, and event outputs.
+
+**Expected results:** Neither plaintext nor ciphertext appears in any log or event; metrics contain method, code, and duration without payload labels. Server responses and caller buffers retain their original bytes.
+
+#### TC-FR10-08: CLI uses standard streams without exposing plaintext in arguments
+
+- **Tier:** component-integration
+- **Owner:** [DEV]
+- **Interface Change:** IC-9
+- **Priority:** critical
+- **Automation:** automated
+
+**Preconditions:** The `fulfillment-service/it/` harness runs a built CLI and deployed Fulfillment API with a ready Transit backend.
+
+**Steps:** Discover an active visible key, pipe binary input to `osac encrypt key <id>`, pipe the resulting ciphertext to `osac decrypt key <id>`, and attempt decrypted output to an interactive terminal.
+
+**Expected results:** CLI output round trips byte-for-byte. Decrypt refuses interactive-terminal output; neither command accepts plaintext as an argument or logs payloads. A caller outside the named project cannot discover or use its key.
+
+#### TC-FR10-09: Deployed user journey crosses identity, API, database, and Vault
+
+- **Tier:** E2E
+- **Owner:** [QE]
+- **Interface Change:** IC-7, IC-8, IC-9
+- **Priority:** critical
+- **Automation:** automated
+
+**Steps:** In a deployed environment, assign independent crypto roles and project memberships to tenant JWT identities; discover a named-project key, encrypt and decrypt via gRPC/REST and CLI, rotate, revoke, recover, and delete it. Try an identity belonging only to another tenant, a same-tenant identity without project membership, and a single-tenant service JWT throughout.
+
+**Expected results:** Only callers with the operation role and required tenant/project visibility can discover or use the key. An identity belonging only to another tenant cannot access it; a single-tenant service JWT can use only its tenant's keys. Rotation retains decryption of old ciphertext; revocation denies both operations; recovery restores them; deletion prevents further decryption. No lifecycle mutation becomes available to a crypto-only caller.
+
+## Direct crypto planning evidence
+
+The following rows cover the added behavior. Locations marked **proposed** do not yet provide execution evidence. Each `[DEV]` case belongs with the implementation that changes that boundary; the deployed `[QE]` case belongs in the cross-component suite. Unit tests mock external services, component integration uses deployed Fulfillment and PostgreSQL, and Contract tests require real Transit policy and key behavior rather than an HTTP stub.
+
+| Component and behavior | Requirement / IC | Tier and owner | Cases and suite | Command / prerequisites | Real and simulated boundary |
+|---|---|---|---|---|---|
+| Fulfillment method authorization and project-filtered DAO | FR-6, FR-10 / IC-7, IC-8 | Unit [DEV] and component-integration [DEV] | TC-FR10-01, 02; existing `internal/auth/`, proposed `it/` key access cases | `ginkgo run -r internal` from `fulfillment-service/`; component suite: `make -C ../osac-installer test PLATFORM=kind PROFILE=dev NS=osac SUITE=fulfillment` from `fulfillment-service/`, with Keycloak and PostgreSQL | Unit OPA/handler tests mock providers; component suite runs Fulfillment, auth, and database, with Vault required for Create and crypto steps. |
+| gRPC, REST gateway, payload validation, and CLI | FR-10 / IC-8, IC-9 | component-integration [DEV] | TC-FR10-03, 08; proposed `fulfillment-service/it/` cases | Same component suite command; requires Transit and tenant JWT identities | Deployed API, gateway, CLI, PostgreSQL, Keycloak, and Vault run for real; no downstream OSAC consumer runs. |
+| Vault Transit key-scoped credentials and policy revocation | FR-4, FR-10 / IC-8 | Contract [DEV] | TC-FR10-05; proposed provider conformance suite | **Unresolved:** no existing real-Transit contract command is documented. The `[DEV]` work must add a runnable suite and command before claiming coverage. | Real Vault Transit and ACL policy evaluation are required; HTTP mocks alone do not qualify. |
+| Confirmed version selection, lifecycle locks, and failed commits | FR-3, FR-4, FR-9, FR-10 / IC-8 | component-integration [DEV] | TC-FR10-04, 06; proposed `fulfillment-service/it/` fault-injection cases | **Unresolved:** the current component suite has no documented Vault-plus-database-commit fault-injection command. Add the fixtures and command in `[DEV]` work. | Fulfillment, PostgreSQL, and Transit must run for real; only the controlled commit failure is injected. |
+| gRPC logging interception | FR-10 / IC-8 | Unit [DEV] | TC-FR10-07; extend `internal/logging/logging_interceptor_test.go` | `ginkgo run internal/logging` from `fulfillment-service/` | Real serialization and redaction code; gRPC handler and Vault are mocked. |
+| Deployed identity-to-Vault journey | FR-10 / IC-7, IC-8, IC-9 | E2E [QE] | TC-FR10-09; proposed `tests/e2e/kms/test_managed_key_crypto.py` | **Unresolved:** no runnable KMS suite or command exists. `[QE]` adds the suite and its execution command with deployed Fulfillment, Keycloak, PostgreSQL, Vault Transit, and CLI. | All named services run for real. No operator or storage consumer is part of this journey. |
+
 ## Gaps
 
 ### Requirement Coverage Gaps
 
-All derived PRD requirement anchors have test cases. No concrete consumer binding is added by OSAC-3612, so the deployed FR-5 `KeyInUse` check, reference-versus-Delete race, and failed database commit after Vault deletion with a live reference cannot be exercised here. [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) owns the first storage consumer's reference field, forward validation, reverse Delete guard, and any durable fence needed to prevent new references after an uncertain deletion. Its `[DEV]` work must cover reference validation, the guard race, and cross-store failure at Unit, Contract, and component-integration tiers; its `[QE]` work must cover the deployed storage binding and blocked destruction journey.
+All derived PRD requirement anchors have planned test cases. The new real-Transit Contract harness, Vault-plus-database fault-injection component harness, and deployed KMS E2E suite are proposed and are not yet execution-ready; their owning `[DEV]` and `[QE]` work must establish commands and fixtures. No concrete consumer binding is added by OSAC-3612, so the deployed FR-5 `KeyInUse` check, reference-versus-Delete race, and failed database commit after Vault deletion with a live reference cannot be exercised here. [OSAC-2389](https://redhat.atlassian.net/browse/OSAC-2389) owns the first storage consumer's reference field, forward validation, reverse Delete guard, and any durable fence needed to prevent new references after an uncertain deletion. Its `[DEV]` work must cover reference validation, the guard race, and cross-store failure at Unit, Contract, and component-integration tiers; its `[QE]` work must cover the deployed storage binding and blocked destruction journey.
 
 ### Interface Change Coverage Gaps
 
-All seven interface changes have test cases for behavior delivered by OSAC-3612. FR-8 uses existing operational interfaces and has no new interface change. IC-5's deployed consumer enforcement is deferred to OSAC-2389 as described above.
+All nine interface changes have planned test cases for behavior delivered by OSAC-3612. FR-8 uses existing operational interfaces and has no new interface change. IC-5's deployed consumer enforcement is deferred to OSAC-2389 as described above. IC-8's real-Transit contract suite and IC-9's deployed CLI case require the proposed harness work noted above.
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Total test cases | 32 |
-| Critical | 23 |
-| High | 9 |
+| Total test cases | 41 |
+| Critical | 31 |
+| High | 10 |
 | Medium | 0 |
 | Low | 0 |
-| Automated | 31 |
+| Automated | 40 |
 | Manual | 1 |
-| Requirements with test cases | 9 / 9 |
-| Interface changes with test cases | 7 / 7 |
+| Requirements with test cases | 10 / 10 |
+| Interface changes with test cases | 9 / 9 |
