@@ -3,7 +3,7 @@
 ## Overview
 
 - **Feature:** OSAC-3612 — Key Management Service: Key Lifecycle Management
-- **Total test cases:** 31
+- **Total test cases:** 32
 - **Requirements covered:** 9 of 9 derived PRD requirement anchors
 - **Interface changes covered:** 7 of 7
 
@@ -194,7 +194,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - Transit latest version advances to `3`.
 - `versions` contains generations `1`, `2`, and `3` in ascending order, with `3` current.
 
-#### TC-FR3-03: Failed database commit after rotation leaves an uncommitted Vault version
+#### TC-FR3-03: Retry records a rotation after database failure
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -208,13 +208,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 1. Change `rotation_trigger` in a locked Update from version `1`; let Vault create version `2`, then fail the database commit.
 2. Call Get and List, and inspect the persisted version records.
-3. Attempt another rotation Update, then follow the operator verification procedure.
+3. Retry Update with `lock=true` after the database recovers.
 
 ##### Expected Results
 
 - The RPC fails; List and PostgreSQL still show only confirmed version `1`.
-- Get returns committed version `1` and does not create a `ManagedKeyVersion` for version `2`; the next rotation Update returns `FailedPrecondition` after observing the mismatch and sends no second POST.
-- The repair procedure verifies the retained Vault versions before updating the OSAC generation mapping; no automatic retry sends a second Transit Rotate POST.
+- Before retry, Get shows version `1`. The retry records Vault version `2` and the trigger without another Rotate POST.
 
 #### TC-FR3-04: CLI rotation reports confirmed completion
 
@@ -250,13 +249,13 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 1. Change `rotation_trigger` in a locked Update and let the client time out while the first Transit POST is held.
 2. Retry the locked Update with the same trigger and metadata version; let the second Transit POST finish first.
-3. Release the first POST, then inspect Transit and ManagedKey through Get and attempt another rotation Update.
+3. Release the first POST, call Get, then send a new Rotate Update.
+4. Repeat with OSAC at version `7` and Vault at `14`, with versions `8` through `14` present.
 
 ##### Expected Results
 
-- The first timeout warns that its POST may still finish; the retry issues a second Rotate POST, whose successful response confirms version `2`.
-- The delayed first POST creates version `3`, which remains in Vault with version `2`; Get shows last-committed version `2` without a live Vault claim.
-- The next rotation Update returns `FailedPrecondition` after observing the mismatch. The operator repair procedure must add the observed generation before further lifecycle changes.
+- The retry sends a second POST and records version `2`; the delayed first POST then creates version `3` while Get still shows `2`.
+- The next Update with `lock=true` records version `3` without another POST. In step 4, it records all seven missing versions.
 
 #### TC-FR3-06: Lifecycle triggers require one changed field in a locked Update
 
@@ -345,6 +344,30 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - Revoke exits zero only with a confirmed `revocation_timestamp` timestamp.
 - Recover exits zero only after `revocation_timestamp` is cleared.
 - Both commands print the lifecycle derived from the confirmed timestamp.
+
+#### TC-FR4-04: Failed Recovery commit is reconciled on retry
+
+**Tier:** component-integration
+
+**Owner:** [DEV]
+
+| Interface Change | Priority | Automation |
+|-----------------|----------|------------|
+| IC-1 | critical | automated |
+
+##### Preconditions
+
+- A revoked key has a consumer token, and the test can fail the final database commit after Vault restores access.
+
+##### Steps
+
+1. Recover after Vault restores access, then fail the database commit.
+2. Restore the database and retry Recover while Vault already allows use.
+
+##### Expected Results
+
+- The failed call does not claim recovery. Get still reports revoked although the consumer token can use Vault.
+- The retry verifies access and clears `revocation_timestamp` without another policy write.
 
 ### FR-5: Define consumer-neutral key references and reject destruction while a consumer remains attached
 
@@ -670,7 +693,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 - Describe output derives current generation `2` from `versions` after rotation, shows `revocation_timestamp` after revoke, and shows it cleared after recovery. After Delete, Describe returns `NotFound` and List omits the key.
 - Any server rejection is printed with its gRPC reason and actionable message.
 
-#### TC-FR9-05: Operator rehearses manual repair after an uncertain rotation
+#### TC-FR9-05: Operator investigates unverifiable provider drift
 
 **Tier:** component-integration
 
@@ -682,20 +705,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-9 headings below are the 
 
 ##### Preconditions
 
-- The operator CLI runbook and a Transit test deployment are available. The test can fail the final PostgreSQL commit after Vault rotates a key.
+- The operator CLI runbook and a Transit test deployment are available. The test can make the Vault version history incomplete.
 
 ##### Steps
 
-1. Create a key at version `1`, rotate it in Vault, and fail the final PostgreSQL commit.
-2. Follow the documented OSAC CLI, Vault CLI, and database-tool steps to stop further mutations, capture both states, and reconcile the confirmed generation and version records.
-3. Verify that old material remains usable, the final repaired OSAC generation matches Vault, and a subsequent authorized lifecycle operation succeeds.
-4. Repeat with an outcome that may still be in flight and follow the runbook's stop-and-escalate path.
+1. Create a key at version `1`, advance Vault, then trim the retained version `1` out of band.
+2. Attempt Update with `lock=true` and follow the runbook.
 
 ##### Expected Results
 
-- The runbook provides exact executable commands and verification steps for the implemented schema; it does not require guessing backend coordinates or editing key material.
-- The confirmed drift is repaired without deleting retained versions or exposing key material. The ambiguous outcome is not retried or marked repaired without evidence.
-- The procedure records manual repair and possible extra retained versions after an uncertain Rotate as known limitations.
+- The Update returns `FailedPrecondition` without adopting incomplete history or sending another Rotate POST.
+- The runbook identifies the missing version and blocks further mutation; it neither invents a version nor exposes key material.
 
 ## Gaps
 
@@ -711,12 +731,12 @@ All seven interface changes have test cases for behavior delivered by OSAC-3612.
 
 | Metric | Count |
 |--------|-------|
-| Total test cases | 31 |
-| Critical | 22 |
+| Total test cases | 32 |
+| Critical | 23 |
 | High | 9 |
 | Medium | 0 |
 | Low | 0 |
-| Automated | 29 |
+| Automated | 31 |
 | Manual | 1 |
 | Requirements with test cases | 9 / 9 |
 | Interface changes with test cases | 7 / 7 |
