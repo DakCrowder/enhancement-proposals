@@ -119,12 +119,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Steps
 
 1. Create and rotate a ManagedKey.
-2. Collect ManagedKey events through the successful rotation Update response.
+2. Collect ManagedKey events through the successful Rotate response.
 3. Inspect every public event payload.
 
 ##### Expected Results
 
-- Events show the committed Create and Rotate changes, with no interim operation event. The Rotate payload includes the committed `action_request.action_trigger` and `last_rotation_timestamp`.
+- Events show the committed Create and Rotate changes, with no interim operation event. The Rotate payload includes `last_rotation_timestamp` and no action request or request ID.
 - The final payload lists generations `1` and `2` in ascending order; the final element is the current confirmed generation.
 - No event includes a Transit mount, backend object ID, credential, or key material.
 
@@ -142,13 +142,13 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 1. Make Vault unavailable; call List and Get.
 2. Restore Vault, remove the Transit key without an OSAC Delete request, and call Get again.
-3. Attempt a locked Update with a new `action_request` containing `rotate` and an action trigger.
+3. Call Rotate with the current `expected_version`.
 
 ##### Expected Results
 
 - List and Get both return last-committed key metadata while Vault is unavailable.
 - Get still returns that metadata after the out-of-band deletion; it does not claim to have checked Vault or to have destroyed the OSAC record.
-- The rotation Update returns `FailedPrecondition` with redacted corrective guidance before changing Vault. OSAC does not label the missing key as an authorized destruction.
+- Rotate returns `FailedPrecondition` with redacted corrective guidance before changing Vault. OSAC does not label the missing key as an authorized destruction.
 
 ### FR-3: Rotate a logical key while preserving its identity and retained material versions
 
@@ -164,7 +164,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Call Update with `lock=true`, the current metadata version, `update_mask=action_request`, and a new nonzero `action_trigger` with `rotate: {}`.
+1. Call Rotate with the key ID and current `metadata.version` as `expected_version`.
 2. Inspect the successful response.
 3. Read the key again.
 
@@ -172,7 +172,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 - The ManagedKey ID is unchanged.
 - `versions` contains generations `1` and `2` in ascending order, with `2` current; no `active_version` or destruction timestamp is set. `state` remains `ACTIVE` and `revocation_timestamp` stays absent.
-- The committed `action_request` echoes the action trigger and selected `rotate` action; `last_rotation_timestamp` records OSAC verification. There is no interim operation field or completed-operation history.
+- `last_rotation_timestamp` records OSAC verification; no action request or request ID appears on the key. There is no interim operation field or completed-operation history.
 
 #### TC-FR3-02: A second completed Rotate is a new operation
 
@@ -186,7 +186,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Call Update again with `lock=true`, the current metadata version, and `rotate: {}` with a new `action_trigger` in `action_request`.
+1. Call Rotate again with the key ID and its new `metadata.version` as `expected_version`.
 2. Read Transit and the ManagedKey.
 
 ##### Expected Results
@@ -206,14 +206,14 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Submit `action_request={action_trigger: 2, rotate: {}}` in a locked Update from version `1`; let Vault create version `2`, then fail the database commit.
+1. Call Rotate with the current `expected_version`; let Vault create generation `2`, then fail the database commit.
 2. Call Get and List, and inspect the persisted version records.
-3. Retry Update with `lock=true` after the database recovers.
+3. Retry Rotate with the same `expected_version` after the database recovers.
 
 ##### Expected Results
 
 - The RPC fails; List and PostgreSQL still show only confirmed version `1`.
-- Before retry, Get shows version `1`, the previous `action_request`, and no new rotation timestamp. The retry records Vault version `2`, the action trigger, and `last_rotation_timestamp` without another Rotate POST.
+- Before retry, Get shows generation `1` and no new rotation timestamp. The retry records Vault generation `2` and `last_rotation_timestamp` without another provider Rotate POST.
 
 #### TC-FR3-04: CLI rotation reports confirmed completion
 
@@ -247,17 +247,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Submit `action_request={action_trigger: 2, rotate: {}}` in a locked Update and let the client time out while the first Transit POST is held.
-2. Retry the locked Update with the same action, action trigger, and metadata version; let the second Transit POST finish first.
-3. Release the first POST, call Get, then send a new Rotate Update.
+1. Call Rotate with the current `expected_version` and let the client time out while the first Transit POST is held.
+2. Retry Rotate with the same `expected_version`; let the second Transit POST finish first.
+3. Release the first POST, call Get, then send another Rotate with the current `expected_version`.
 4. Repeat with OSAC at version `7` and Vault at `14`, with versions `8` through `14` present.
 
 ##### Expected Results
 
 - The retry sends a second POST and records version `2`; the delayed first POST then creates version `3` while Get still shows `2`.
-- The next Update with `lock=true` records version `3` without another POST. In step 4, it records all seven missing versions.
+- The next Rotate records generation `3` without another provider POST. In step 4, it records all seven missing versions.
 
-#### TC-FR3-06: Action requests require one action and a new trigger in a locked Update
+#### TC-FR3-06: Lifecycle RPCs require a current expected version
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -265,22 +265,21 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
-- An active key is at version `1`, and its last committed action request, if any, is known.
+- An active key is at generation `1`, and the caller knows its current `metadata.version`.
 
 ##### Steps
 
-1. Attempt Create with `action_request` set.
-2. Attempt to change `action_request` through Update with `lock=false`.
-3. Attempt locked Updates with an absent request, a zero `action_trigger`, no selected `oneof` action, or `action_request` combined with a metadata edit.
-4. After a successful Rotate, send a locked Update with the same action trigger and `rotate: {}`, then reuse that trigger with `revoke: {}`.
-5. Attempt to set `state`, `revocation_timestamp`, or `last_rotation_timestamp` in an Update.
+1. Call each of Rotate, Revoke, and Recover with a missing, zero, or negative `expected_version`; attempt a lifecycle change through Update.
+2. Rotate successfully with the current `expected_version`, then retry with that stale version after simulating a lost response.
+3. Read the key, call Rotate with its new `metadata.version`, and inspect the confirmed generations.
+4. Attempt to set `state`, `revocation_timestamp`, or `last_rotation_timestamp` in an Update.
 
 ##### Expected Results
 
-- Create and malformed Updates return `InvalidArgument`; `lock=false` is rejected under the locked Update contract. None has a Vault effect or changes committed state.
-- Repeating the last committed trigger and action has no Vault effect. Reusing that trigger with another action returns `InvalidArgument`.
-- Caller writes to `state` or lifecycle timestamps are rejected.
-- `ManagedKeys` exposes no separate Rotate, Revoke, or Recover methods.
+- Missing or nonpositive `expected_version` returns `InvalidArgument`; Update rejects lifecycle fields. The invalid requests have no provider effect and do not change committed state.
+- The stale retry returns `Aborted` before a provider call. Get shows the committed generation; without a request ID, it does not identify which call produced it.
+- A new Rotate with the current version is a new operation and can create another generation.
+- Caller writes to `state` or lifecycle timestamps are rejected; `ManagedKeys` exposes distinct Rotate, Revoke, and Recover methods.
 
 ### FR-4: Revoke all versions, block normal use and new references, and permit explicit authorized recovery
 
@@ -288,7 +287,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
-| IC-5 | critical | automated |
+| IC-1, IC-2 | critical | automated |
 
 ##### Preconditions
 
@@ -296,14 +295,14 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Submit `action_request={action_trigger: 3, revoke: {}}` in a locked Update and wait for the synchronous response.
+1. Call Revoke with the key ID and current `expected_version`; wait for the synchronous response.
 2. Use the pre-existing consumer token to attempt Vault Transit encrypt and decrypt against both retained versions.
 
 ##### Expected Results
 
 - Vault rejects encryption and decryption under the updated key-specific ACL; the Transit key and both material versions still exist.
 - A new normal consumer credential cannot bypass the denied policy, and an unrelated key remains usable.
-- `state` becomes `REVOKED` and `revocation_timestamp` is set only after denial is verified. The committed `action_request` echoes the action trigger and Revoke action. The OSAC record and material versions remain.
+- `state` becomes `REVOKED` and `revocation_timestamp` is set only after denial is verified. The response returns the confirmed ManagedKey. The OSAC record and material versions remain.
 
 #### TC-FR4-02: Authorized recovery restores normal key use
 
@@ -317,14 +316,15 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Submit `action_request={action_trigger: 4, recover: {}}` in a locked Update and wait for the synchronous response.
-2. Get the key and perform a Vault Transit encrypt/decrypt round trip using a consumer token that existed before revocation.
+1. Call Rotate and Revoke on the revoked key with the current `expected_version`.
+2. Call Recover with the key ID and current `expected_version`; wait for the synchronous response.
+3. Call Recover again with the now-current version, then Get the key and perform a Vault Transit encrypt/decrypt round trip using a consumer token that existed before revocation.
 
 ##### Expected Results
 
-- Success changes `state` to `ACTIVE`, clears `revocation_timestamp`, and commits the Recover action request without changing the key ID, final `versions` element, or `last_rotation_timestamp`. No interim operation field is exposed.
+- Success changes `state` to `ACTIVE`, clears `revocation_timestamp`, and returns the confirmed key without changing the key ID, final `versions` element, or `last_rotation_timestamp`. No interim operation field is exposed.
 - The restored key-specific policy permits the round trip and returns the original plaintext to the fixture.
-- Existing version metadata remains present.
+- Existing version metadata remains present. Rotate and Revoke while revoked, and Recover while active, return `FailedPrecondition` before any provider effect.
 
 #### TC-FR4-03: CLI revoke and recover show confirmed outcomes
 
@@ -343,8 +343,8 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Expected Results
 
-- Revoke exits zero only when `state=REVOKED`, `revocation_timestamp`, and the matching Revoke request are committed.
-- Recover exits zero only when `state=ACTIVE`, absent `revocation_timestamp`, and the matching Recover request are committed.
+- Revoke exits zero only when `state=REVOKED`, `revocation_timestamp`, are committed.
+- Recover exits zero only when `state=ACTIVE`, absent `revocation_timestamp`, are committed.
 - Both commands print the confirmed lifecycle state; Revoke includes its confirmation timestamp.
 
 #### TC-FR4-04: Failed Recovery commit is reconciled on retry
@@ -369,7 +369,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Expected Results
 
 - The failed call does not claim recovery. Get still reports revoked although the consumer token can use Vault.
-- The retry verifies access, sets `state=ACTIVE`, clears `revocation_timestamp`, and records the Recover action request without another policy write.
+- The retry verifies access, sets `state=ACTIVE`, clears `revocation_timestamp`, without another policy write.
 
 ### FR-5: Define consumer-neutral key references and reject destruction while a consumer remains attached
 
@@ -454,12 +454,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Steps
 
 1. List ManagedKeys.
-2. Get and update the `tenant-b` key by ID, then Get the `system` key by ID.
+2. Get, Update, and call Rotate on the `tenant-b` key by ID, then Get the `system` key by ID.
 
 ##### Expected Results
 
 - List contains only `tenant-a` keys.
-- Get and Update for the `tenant-b` key and Get for the `system` key return `NotFound` without disclosing their existence.
+- Get, Update, and Rotate for the `tenant-b` key and Get for the `system` key return `NotFound` without disclosing their existence.
 
 #### TC-FR6-02: Tenant User has no direct key-management authority
 
@@ -492,7 +492,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Steps
 
 1. Authenticate as an existing administrator.
-2. List, get, and update each key within valid lifecycle transitions.
+2. List, Get, Update permitted metadata, and call Rotate, Revoke, and Recover on each key within valid lifecycle transitions.
 
 ##### Expected Results
 
@@ -623,13 +623,13 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Steps
 
-1. Submit a new `action_request={action_trigger: 5, rotate: {}}` in a locked Update.
+1. Call Rotate with the key ID and current `expected_version`.
 2. Get the ManagedKey after the synchronous RPC fails.
 
 ##### Expected Results
 
-- The rotation Update returns a gRPC error with reason `ProviderPolicyConflict` and a redacted message identifying the corrective configuration category.
-- Get still reports `versions=[1]`, `state=ACTIVE`, no rotation timestamp, and no new action request because the provider confirmed no effect.
+- Rotate returns a gRPC error with reason `ProviderPolicyConflict` and a redacted message identifying the corrective configuration category.
+- Get still reports `versions=[1]`, `state=ACTIVE`, no rotation timestamp, because the provider confirmed no effect.
 
 #### TC-FR9-02: Failed database commit after Delete can be retried
 
@@ -666,12 +666,12 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Steps
 
 1. As Tenant Admin, create and view a key.
-2. Rotate, revoke, and recover the key through three locked public Updates, each with `update_mask=action_request`, a new action trigger, and one action message, then call Delete on the unreferenced key.
+2. Call the public Rotate, Revoke, and Recover RPCs through their REST POST bindings in order, each with the key ID in the path and current `metadata.version` as `expectedVersion` in the body, then call Delete on the unreferenced key.
 3. Verify Get returns `NotFound` and List omits the destroyed key.
 
 ##### Expected Results
 
-- Create and the three lifecycle Updates return committed action requests and server-set `state`, `revocation_timestamp`, or `last_rotation_timestamp` as applicable. Delete confirms removal with an empty response. A timeout reports that its Vault effect may be uncertain; Delete can retry an existing OSAC row after Vault deletion.
+- Create and the three lifecycle RPCs return a confirmed ManagedKey with server-set `state`, `revocation_timestamp`, or `last_rotation_timestamp` as applicable. Delete confirms removal with an empty response. A timeout reports that its Vault effect may be uncertain; Delete can retry an existing OSAC row after Vault deletion.
 - Rotation retains the old generation, revocation denies normal Vault Transit use through existing consumer tokens, recovery restores it, and destruction removes the provider key.
 - Cross-tenant and unauthorized access remain denied throughout the journey.
 
@@ -714,11 +714,11 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 ##### Steps
 
 1. Create a key at version `1`, advance Vault, then trim the retained version `1` out of band.
-2. Attempt Update with `lock=true` and follow the runbook.
+2. Call Rotate with the current `expected_version` and follow the runbook.
 
 ##### Expected Results
 
-- The Update returns `FailedPrecondition` without adopting incomplete history or sending another Rotate POST.
+- Rotate returns `FailedPrecondition` without adopting incomplete history or sending another Rotate POST.
 - The runbook identifies the missing version and blocks further mutation; it neither invents a version nor exposes key material.
 
 ### FR-10: Discover visible keys and encrypt or decrypt small payloads through API and CLI
@@ -747,7 +747,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Steps:** Evaluate OPA and public handler authorization for encrypt-only, decrypt-only, both-role, Tenant Admin without crypto roles, ordinary client, and unrestricted administrator identities against a visible key. Also test a user with an encrypt realm role and organization claims for tenants `a` and `b`, including keys in each tenant and an invisible project.
 
-**Expected results:** Each crypto role grants only its named operation plus Get/List; neither grants Create, Update, or Delete. The multi-tenant user can Encrypt visible keys in both claimed tenants, following existing realm-role semantics, but cannot access an invisible project. Tenant Admin lifecycle authority alone grants neither crypto operation. Existing unrestricted administrators retain both. Missing operation permission returns `PermissionDenied` without a Vault call.
+**Expected results:** Each crypto role grants only its named operation plus Get/List; neither grants Create, Update, Rotate, Revoke, Recover, or Delete. The multi-tenant user can Encrypt visible keys in both claimed tenants, following existing realm-role semantics, but cannot access an invisible project. Tenant Admin lifecycle authority alone grants neither crypto operation. Existing unrestricted administrators retain both. Missing operation permission returns `PermissionDenied` without a Vault call.
 
 #### TC-FR10-03: API round trip, payload limits, and input errors
 
@@ -759,9 +759,9 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Preconditions:** Fulfillment, PostgreSQL, REST gateway, Keycloak, and Transit run for real with an active key and tenant-scoped crypto-role JWT.
 
-**Steps:** Encrypt and decrypt binary data through gRPC and REST, including a 65536-byte plaintext. Submit empty and 65537-byte plaintext, ciphertext longer than 131072 bytes, malformed ciphertext, and ciphertext from another key.
+**Steps:** Encrypt and decrypt binary data through gRPC and REST, including a 65536-byte plaintext. Submit empty and 65537-byte plaintext; empty and longer-than-131072-byte ciphertext; malformed and non-UTF-8 Transit ciphertext, invalid REST base64, and ciphertext from another key. Verify that the REST ciphertext is base64 of the complete Vault versioned string bytes and that the same bytes decrypt through gRPC.
 
-**Expected results:** Round trips recover identical bytes; REST represents plaintext bytes as base64. Encrypt returns an opaque Vault ciphertext string and confirmed generation `1`. Invalid inputs and failed decryption return redacted `InvalidArgument`, with no payload in events or persisted key data. Crypto calls do not increment key metadata version.
+**Expected results:** Round trips recover identical bytes; REST represents both plaintext and ciphertext bytes as base64. Encrypt returns opaque ciphertext bytes and confirmed generation `1`. Transit ciphertext bytes equal the UTF-8 bytes of Vault's complete versioned string, with no decoding of its internal base64 segment. Invalid inputs and failed decryption return redacted `InvalidArgument`, with no payload in events or persisted key data. Crypto calls do not increment key metadata version.
 
 #### TC-FR10-04: Rotation switches encryption and retains decryption
 
@@ -827,7 +827,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Steps:** Discover an active visible key, pipe binary input to `osac encrypt key <id>`, pipe the resulting ciphertext to `osac decrypt key <id>`, and attempt decrypted output to an interactive terminal.
 
-**Expected results:** CLI output round trips byte-for-byte. Decrypt refuses interactive-terminal output; neither command accepts plaintext as an argument or logs payloads. A caller outside the named project cannot discover or use its key.
+**Expected results:** CLI ciphertext output is byte-for-byte the Encrypt response with no added newline, and the decrypted output matches the input bytes. Decrypt refuses interactive-terminal output; neither command accepts plaintext as an argument or logs payloads. A caller outside the named project cannot discover or use its key.
 
 #### TC-FR10-09: Deployed user journey crosses identity, API, database, and Vault
 
