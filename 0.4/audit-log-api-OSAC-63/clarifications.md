@@ -34,9 +34,11 @@ is a follow-up for a later milestone.
 
 #### Decision (D1)
 
-All Definition of Done items from the Feature issue are in scope for the
-0.4 Dev Preview milestone. Dev Preview means functional but not
-production-hardened.
+The 0.4 Dev Preview milestone delivers the walking skeleton: audit
+event capture, query, and API-level append-only immutability.
+Cryptographic integrity, bulk export, before/after state, and
+configurable retention are deferred to follow-up Features (see D4, D5,
+D10, R2.Q3). Dev Preview means functional but not production-hardened.
 
 ---
 
@@ -113,8 +115,10 @@ implications).
 
 #### Decision (D4)
 
-Full before/after state capture for all resource mutations is in
-scope for 0.4.
+~~Full before/after state capture for all resource mutations is in
+scope for 0.4.~~ Revised after EP review: deferred to a follow-up
+Feature. The walking skeleton captures the action and target resource
+without full state diffs.
 
 ---
 
@@ -141,9 +145,10 @@ specific cryptographic mechanism.
 
 #### Decision (D5)
 
-Audit records must have cryptographic integrity verification (not
-just API-level immutability). The specific mechanism (hash chains,
-Merkle trees, etc.) is a design decision.
+~~Audit records must have cryptographic integrity verification (not
+just API-level immutability).~~ Revised after EP review: deferred to a
+follow-up Feature. The walking skeleton provides API-level append-only
+immutability; cryptographic tamper-evidence is a later increment.
 
 ---
 
@@ -207,15 +212,14 @@ perspective, and what formats are required?
 
 #### Answer
 
-Bulk download endpoint returning JSON and/or CSV.
+~~Bulk download endpoint returning JSON and/or CSV.~~ Revised after EP
+review: deferred to a follow-up Feature. The paginated query API
+serves compliance workflows initially.
 
 #### Impact
 
-The PRD will require a bulk export capability (dedicated endpoint or
-API parameter) that returns audit records in JSON and CSV formats.
-This is separate from the paginated query API — it is a download
-mechanism for compliance reporting workflows that need complete
-datasets.
+Bulk export is out of scope for 0.4. The paginated query API provides
+initial compliance reporting capability.
 
 ---
 
@@ -316,9 +320,11 @@ The specific default value and any upper bound are design decisions.
 
 #### Decision (D10)
 
-Retention policy is configured via Helm default at install time and
+~~Retention policy is configured via Helm default at install time and
 adjustable at runtime by the Cloud Provider Admin via API. The minimum
-retention period is 30 days.
+retention period is 30 days.~~ Revised after EP review: deferred to a
+follow-up Feature. The walking skeleton retains records indefinitely;
+retention management is a later increment.
 
 ---
 
@@ -373,27 +379,6 @@ storage and event ingestion from Kafka and Keycloak, leaving the
 specific deployment architecture to the design.
 
 ---
-
-## Superseded Decisions
-
-The following decisions were locked during clarification but later
-descoped based on EP review feedback (right-sizing to a walking
-skeleton for 0.4 Dev Preview):
-
-- **D4** (before/after state for all mutations) — deferred to a
-  follow-up Feature. The walking skeleton captures the action and
-  target resource without full state diffs.
-- **D5** (cryptographic integrity verification) — deferred to a
-  follow-up Feature. The walking skeleton provides API-level
-  append-only immutability.
-- **D10** (configurable retention with 30-day minimum) — deferred to a
-  follow-up Feature. The walking skeleton retains records indefinitely.
-- **R2.Q3 answer** (bulk export in JSON/CSV) — deferred to a follow-up
-  Feature. The paginated query API serves compliance workflows
-  initially.
-
-D1 (full DoD scope for 0.4) is effectively narrowed by these deferrals.
-The PRD reflects the revised scope.
 
 ## Remaining Gaps
 
