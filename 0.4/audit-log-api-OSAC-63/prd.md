@@ -32,9 +32,9 @@ depend on this capability.
 - Keycloak authentication event capture: login success/failure, token
   operations, session events — captured per tenant organization.
   [Clarify: D3]
-- Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API, with
-  filtering by time range, actor, action type, resource type, resource ID,
-  and outcome. [Clarify: D7, D9]
+- Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
+  Supported filters: time range, actor, action type, resource type,
+  resource ID, and outcome. [Clarify: D7, D9]
 - Append-only, immutable storage — no API exposes update or delete of
   audit records.
 - Audit-of-audit: Cloud Provider Admin access to tenant audit data is
@@ -75,12 +75,15 @@ depend on this capability.
 
 ## User Stories
 
+Cloud Infrastructure Admin and Tenant User do not have audit log access
+in this milestone. [Clarify: D6]
+
 ### Cloud Provider Admin
 
 - As a Cloud Provider Admin, I want to query audit events across all
-  tenants — filtering by time range, actor, action type, resource type,
-  resource ID, and outcome — so that I can investigate security incidents
-  and produce platform-wide compliance reports. [Clarify: D9]
+  tenants — using the filters defined in In Scope — so that I can
+  investigate security incidents and produce platform-wide compliance
+  reports. [Clarify: D9]
 
 - As a Cloud Provider Admin, I want to query audit events scoped to a
   specific tenant so that I can produce tenant-scoped audit extracts for
@@ -90,10 +93,9 @@ depend on this capability.
 ### Tenant Admin
 
 - As a Tenant Admin, I want to query a chronological audit trail of all
-  actions performed within my organization — filtering by time range,
-  actor, action type, resource type, resource ID, and outcome — so that
-  I can investigate incidents and track changes without requesting
-  platform operator assistance.
+  actions performed within my organization — using the filters defined
+  in In Scope — so that I can investigate incidents and track changes
+  without requesting platform operator assistance.
 
 - As a Tenant Admin, I want each audit record to include the actor,
   timestamp, action, target resource, and outcome so that I can see
@@ -115,25 +117,23 @@ depend on this capability.
 
 ## Dependencies
 
-- **OSAC-6154 — Actor attribution in Fulfillment Events (blocking):**
-  Each audit record must identify the user who initiated the action.
-  OSAC-6154 adds actor identity to events. The audit log cannot ship
+- **OSAC-6154 (blocking):** Each audit record must identify the user who
+  initiated the action. Until OSAC-6154 delivers this capability, audit
+  records cannot attribute actions to users. The audit log cannot ship
   without it. [Clarify: D2]
 
-- **OSAC-983 — Reliable Event Distribution via Message Broker
-  (satisfied):** The audit log consumes durable, tenant-isolated events.
-  OSAC-983 is Closed — the event distribution infrastructure is in place.
+- **OSAC-983 (satisfied):** The audit log depends on platform event
+  delivery infrastructure that is already in place (OSAC-983 is Closed).
 
-- **Keycloak event integration:** Authentication events (login, token,
-  session) originate from Keycloak, which is a separate event source from
-  resource lifecycle events. Authentication events must be available to
-  the audit log. [Clarify: D3]
+- **Keycloak authentication events:** Authentication events (login,
+  token, session) originate from Keycloak and must be available to the
+  audit log independently of resource lifecycle events. [Clarify: D3]
 
 ---
 
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - 4164796, workspace main @ f4607b916
-Phases: draft, revise, revise
+Phases: draft, revise, revise, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"4164796","source_repo":"f4607b916","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"4164796","source_repo":"f4607b916","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
