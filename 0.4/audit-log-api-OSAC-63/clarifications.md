@@ -374,6 +374,27 @@ specific deployment architecture to the design.
 
 ---
 
+## Superseded Decisions
+
+The following decisions were locked during clarification but later
+descoped based on EP review feedback (right-sizing to a walking
+skeleton for 0.4 Dev Preview):
+
+- **D4** (before/after state for all mutations) — deferred to a
+  follow-up Feature. The walking skeleton captures the action and
+  target resource without full state diffs.
+- **D5** (cryptographic integrity verification) — deferred to a
+  follow-up Feature. The walking skeleton provides API-level
+  append-only immutability.
+- **D10** (configurable retention with 30-day minimum) — deferred to a
+  follow-up Feature. The walking skeleton retains records indefinitely.
+- **R2.Q3 answer** (bulk export in JSON/CSV) — deferred to a follow-up
+  Feature. The paginated query API serves compliance workflows
+  initially.
+
+D1 (full DoD scope for 0.4) is effectively narrowed by these deferrals.
+The PRD reflects the revised scope.
+
 ## Remaining Gaps
 
 None. All identified gaps have been resolved.
