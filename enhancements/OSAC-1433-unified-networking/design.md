@@ -3,7 +3,7 @@ title: Unified Networking API for VMaaS, CaaS, and BMaaS
 authors:
   - dmanor@redhat.com
 creation-date: 2026-06-03
-last-updated: 2026-10-19
+last-updated: 2026-10-21
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-1433
 prd: "prd.md"
@@ -1269,6 +1269,68 @@ message ExternalIPAttachmentSpec {
 
 All fields are immutable after creation.
 
+##### ExternalIPAttachment AAP contract v1
+
+The attachment job contract is independently versioned from
+`externalIPContractVersion`. A manager advertises
+`externalIPAttachmentContractVersion: v1` only after it implements this input
+and result contract. An unversioned manager keeps its existing behavior until
+its own adoption work is complete; Netris is not switched implicitly.
+
+For AgentlessNet v1, the OSAC controller resolves the current ExternalIP,
+BareMetalInstance target, primary Subnet, and parent VirtualNetwork. It validates
+their Kubernetes and Fulfillment identities, tenant ownership, readiness, and
+canonical IPv4 values before dispatch. The job keeps the attachment CR in
+`osac_job_vars.resource` and includes a typed
+`osac_job_vars.external_ip_attachment_context` snapshot:
+
+| Context object | Required caller-supplied values |
+|---|---|
+| `external_ip` | Fulfillment ID, Kubernetes UID, tenant ID, allocated IPv4 address, `state: Allocated`, `phase: Ready` |
+| `target` | `kind: BareMetalInstance`, Fulfillment ID, Kubernetes UID, tenant ID, primary private IPv4 address, `ready: true` |
+| `subnet` | Fulfillment ID, Kubernetes UID, tenant ID, IPv4 CIDR, parent VirtualNetwork Fulfillment ID, `phase: Ready` |
+| `virtual_network` | Fulfillment ID, Kubernetes UID, tenant ID, `phase: Ready` |
+
+The snapshot is job input, not annotation state. AAP consumes the caller's
+snapshot, reads and updates only its provider-owned state, and does not query
+Kubernetes or patch OSAC annotations or status. AgentlessNet v1 supports the
+BMaaS target path first; other service target adapters must supply their own
+resolved context before their manager advertises v1. [Codebase:
+`osac-operator/internal/controller/externalipattachment_contract.go`,
+`osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net/tasks/_external_ip_attachment.yaml`]
+
+An attach or detach job returns its result in the artifact from the same AAP
+job whose input the operator submitted:
+
+```yaml
+osac_result:
+  schemaVersion: v1
+  operation: external_ip_attachment.attach # or external_ip_attachment.detach
+  resourceUID: <ExternalIPAttachment Kubernetes UID>
+  observedGeneration: <generation submitted in osac_job_vars.resource>
+  data: {}
+```
+
+The provider emits this result only after its requested operation is verified.
+The operator compares the result schema, operation, UID, generation, and data
+with that same job's input and the current attachment. It marks an attachment
+Ready only after the current attach result is valid. During deletion it uses
+the pinned contract and saved provider state, validates the matching detach
+result, and retains the attachment finalizer and ExternalIP consumer
+reservation if validation or provider cleanup fails. Detach does not depend on
+live ExternalIP, target, Subnet, or VirtualNetwork snapshots. [Codebase:
+`osac-operator/pkg/provisioning/external_ip_attachment_result.go`,
+`osac-operator/internal/controller/externalipattachment_controller.go`]
+
+This contract amendment is implemented for AgentlessNet under
+[OSAC-6308](https://redhat.atlassian.net/browse/OSAC-6308). It does not change
+the ExternalIP allocation/release work tracked by
+[OSAC-6376](https://redhat.atlassian.net/browse/OSAC-6376). Netris must adopt
+the attachment v1 contract before advertising it; the Netris adoption is
+tracked by [OSAC-6638](https://redhat.atlassian.net/browse/OSAC-6638). Broader
+deployed AgentlessNet validation remains tracked by
+[OSAC-5533](https://redhat.atlassian.net/browse/OSAC-5533).
+
 #### NATGateway — Outbound Traffic (SNAT)
 
 Handles **outbound traffic only**.
@@ -1818,7 +1880,22 @@ They use a fixture-driven provider; they do not exercise a deployed AAP server.
 | TC-EIP-V1-14 | FR-9 | ExternalIP capacity remains reserved while its row is terminating, then returns exactly once on archive. The migration backfill counts every unarchived ExternalIP. | Component integration / `[DEV]` OSAC-6307 | From `fulfillment-service/`, `go test ./internal/servers ./internal/database/migrations -timeout 20m`. Fulfillment code and PostgreSQL test container are real; Kubernetes and provider cleanup are not exercised. |
 | TC-EIP-V1-15 | FR-6 | An unversioned manager retains its annotation handoff. V1 success requires artifact evidence and does not use the annotation as a fallback. | Unit / `[DEV]` OSAC-6307 | Existing and extended ExternalIP controller tests in `osac-operator/internal/controller/`; from the osac root, `make -C osac-operator test`. Managers and provider responses are fixtures. |
 | TC-EIP-V1-16 | FR-10 | With provider networking disabled, a previously validated v1 address remains in status and no allocation job runs. An unallocated v1 resource has no fabricated provider address. | Envtest / `[DEV]` OSAC-6307 | `osac-operator/internal/controller/externalip_contract_envtest_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes API and etcd are real; provider dispatch is observed with a fixture. |
-| TC-EIP-V1-17 | FR-6, FR-9 | Deployed allocation, retry, and release exercise AAP transport, operator input/artifact retrieval, and final status through the supported environment. | E2E / `[QE]` | No runnable deployed AgentlessNet ExternalIP E2E path was identified in the available suite. Track the boundary under [OSAC-4843](https://redhat.atlassian.net/browse/OSAC-4843); do not count provider fixtures as deployed coverage. |
+| TC-EIP-V1-17 | FR-6, FR-9 | Deployed allocation, retry, and release exercise AAP transport, operator input/artifact retrieval, and final status through the AgentlessNet lab. | Deployed lab E2E / `[DEV]` OSAC-6308 | From the repository root on `e2e`, run `bash ./vlan-e2e.sh --external-ip`. The scenario also creates a real BMaaS target and validates inbound attachment reachability. It uses a test-only static route and does not verify upstream BGP advertisement. |
+
+### ExternalIPAttachment v1 Contract Coverage
+
+These cases cover the controller-to-AAP contract and the first AgentlessNet
+BMaaS consumer path. The deployed lab probe uses a test-only static `/32` route
+from upstream-router to the network node; it proves packet forwarding and a BMI
+response but does not prove upstream BGP advertisement.
+
+| Case | Requirement | Scenario and assertion | Tier / owner | Suite, command, and boundary |
+|---|---|---|---|---|
+| TC-EIA-V1-01 | FR-5, FR-9 | Resolve exactly one current ExternalIP, ready BMI primary address, Ready Subnet, and Ready parent VirtualNetwork; reject identity, tenant, relationship, or IPv4 mismatches before dispatch. | Unit / `[DEV]` OSAC-6308 | `osac-operator/internal/controller/externalipattachment_contract_unit_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes resources are fixtures. |
+| TC-EIA-V1-02 | FR-5, FR-9 | Submit the typed dependency snapshot in the same job input as the attachment CR; verify AAP makes no Kubernetes query or CR write and emits attach/detach artifacts only after provider work. | Component integration / `[DEV]` OSAC-6308 | From `osac-aap/tests/integration/`, run `uv run ansible-playbook targets/agentless_net_external_ip_attachment/tasks/baseline.yml -e @common_vars.yml`. It uses the production playbooks and SQLite with test-only provider-command mocks. |
+| TC-EIA-V1-03 | FR-5, FR-9 | Accept Ready only for matching v1 operation, UID, generation, same-job input, and current dependency snapshot; invalid or stale results keep Ready false. | Envtest / `[DEV]` OSAC-6308 | `osac-operator/internal/controller/externalipattachment_contract_unit_test.go` and controller tests; from the osac root, `make -C osac-operator test`. The API server is envtest and AAP is fixture-driven. |
+| TC-EIA-V1-04 | FR-9, FR-10 | Detach from saved provider state; retain finalizers and the ExternalIP consumer reservation when the detach job or result is invalid. | Unit and component integration / `[DEV]` OSAC-6308 | Operator controller tests plus the AgentlessNet attachment target above. Provider commands are fixture-driven. |
+| TC-EIA-V1-05 | FR-5, FR-10 | A Fulfillment-created BMI replies through two ExternalIPs; retry one attachment, detach it without changing its peer, then detach before releasing EIPs or deleting BMI/Subnet/VN. | Deployed lab E2E / `[DEV]` OSAC-6308 | From the repository root on `e2e`, run `bash ./vlan-e2e.sh --external-ip` and recover with `bash ./vlan-e2e.sh --cleanup --external-ip`. Requires the source-pinned OSAC/AAP deployment, BMaaS, an available host/CatalogItem, and Containerlab. The static route is not BGP coverage. |
 
 ### Provider Networking Control Coverage (FR-10)
 
@@ -1909,8 +1986,9 @@ No additional infrastructure beyond existing OSAC components and managers.
 
 ## Provenance
 
-Authored: respond @ design 0.11.5 - 0c7ea35, workspace osac-6307-agentlessnet-external-ip @ bb6b29932 (dirty)
+Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
+Phases: revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"0c7ea35","source_repo":"bb6b29932 (dirty)","source_repo_branch":"osac-6307-agentlessnet-external-ip","commits_behind_main":0,"commits_ahead_main":14,"main_ref":"main","phases":["respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->

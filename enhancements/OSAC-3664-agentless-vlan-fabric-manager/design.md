@@ -3,7 +3,7 @@ title: agentless-vlan-fabric-manager
 authors:
   - yonibettan@gmail.com
 creation-date: 2026-09-08
-last-updated: 2026-09-22
+last-updated: 2026-10-21
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-3664
   - https://redhat.atlassian.net/browse/OSAC-4307
@@ -355,17 +355,24 @@ service-specific input contracts are not expanded here. [Locked: D1, D2]
    agentless `create_external_ip_attachment` operation. The role resolves the
    target VirtualNetwork and its persisted transit link, installs one owned
    whole-address DNAT rule from `ExternalIP.status.address` to the target
-   address, and then announces the exact ExternalIP `/32` through BGP with the
-   namespace-side transit address as the next hop. The route is announced only
-   after the namespace, forwarding path, and DNAT rule are present. The
-   VirtualNetwork permit-all baseline is reconciled by the VirtualNetwork
-   lifecycle; the attachment operation does not create or update policy
-   resources.
+   address, and installs the consumer-owned local FRR `/32` route using the
+   saved namespace-side transit address as its next hop. For AgentlessNet
+   contract v1, the controller supplies the ExternalIP, BareMetalInstance,
+   primary Subnet, and parent VirtualNetwork identity/readiness/address
+   snapshot with the attachment CR. AAP consumes this job input and saved
+   provider state; it does not query Kubernetes or update OSAC CRs. It returns
+   the v1 attach artifact only after its DNAT, forwarding, and local FRR route
+   checks pass. The VirtualNetwork permit-all baseline is reconciled by the
+   VirtualNetwork lifecycle; the attachment operation does not create or
+   update policy resources.
 6. The attachment remains Pending or Progressing until both the parent
    ExternalIP address and the target address are current, the whole-address
-   DNAT rule is present, and the BGP `/32` is observed as installed. It reaches
-   Ready only after those checks and status feedback confirm the operation. If
-   allocation succeeds but DNAT or route advertisement fails, the
+   DNAT rule and local FRR `/32` route are present, and the controller accepts
+   the matching result artifact from the same AAP job. It reaches Ready only
+   after those checks and status feedback confirm the operation. Upstream BGP
+   peering and policy remain provider configuration outside the AAP job; the
+   deployed external-client probe verifies the packet path. If allocation
+   succeeds but DNAT or local-route setup fails, the
    ExternalIPAttachment remains non-ready; `status.attached` remains true
    because the consumer reservation still prevents a second user. The address
    remains reserved for retry or ordered cleanup. For a Cluster target,
@@ -444,20 +451,24 @@ interface. The BGP `/32`, the persisted transit next hop, and the namespace NAT
 state together provide reachability and make repair/deletion deterministic.
 
 The provider underlay contract is explicit. The provider inventory must have a
-working FRR/BGP session and upstream route policy before `agentless_net` is
-Ready; those peer/session settings are provider configuration, not tenant
-inputs. The existing `agentless_net.l3.bgp` primitive does not establish the
-upstream BGP session. It adds or removes the consumer-owned local FRR static
-route `<external-ip>/32 via <namespace-transit-next-hop>`, which FRR then
-advertises over the provider-owned session. Agentless owns that local route and
-the consumer UID; the provider owns the BGP peer and upstream policy.
+working FRR/BGP session and upstream route policy for external reachability;
+those peer/session settings are provider configuration, not tenant inputs. The
+AgentlessNet AAP job installs and verifies the consumer-owned local FRR static
+route `<external-ip>/32 via <namespace-transit-next-hop>`. The provider-owned
+FRR configuration distributes that route to its peer. The job does not query
+the upstream router or claim to verify remote BGP convergence. Agentless owns
+the local route and consumer UID; the provider owns the BGP peer and upstream
+policy.
 
-An attachment or NATGateway is Ready only after the local FRR route is present,
-the provider route check confirms the `/32` is advertised/reachable upstream,
-and the namespace translation is installed. Cleanup withdraws the exact local
-route, verifies that upstream reachability is gone, and only then removes the
-translation and permits ExternalIP cleanup. A failed or unavailable upstream
-check leaves the consumer non-ready and retains its finalizer and reservation.
+An ExternalIPAttachment is Ready only after its local route and namespace
+translation are present and the controller accepts the matching v1 AAP result
+artifact. The deployed external-client test verifies packet reachability.
+Cleanup withdraws the exact local route and verifies it is absent before
+removing the translation or permitting ExternalIP cleanup. A failed local
+route or translation check leaves the consumer non-ready and retains its
+finalizer and reservation. This attachment contract does not change NATGateway
+readiness or result handling. [Codebase:
+`osac-aap/collections/ansible_collections/osac/templates/plugins/module_utils/agentless_net_external_ip.py`]
 [Codebase: osac-aap/collections/ansible_collections/agentless_net/l3/roles/bgp]
 
 #### Failure and recovery workflow
@@ -487,8 +498,8 @@ failure message in the existing provisioning history and status condition.
 #### Deletion and cleanup
 
 1. The resource controller observes deletion and retains its finalizer.
-2. For an ExternalIPAttachment, withdraw its ExternalIP `/32` BGP route and
-   wait until the route is absent from the net-node routing/BGP state. Remove
+2. For an ExternalIPAttachment, withdraw its ExternalIP `/32` local FRR route
+   and wait until it is absent from the net-node RIB. Remove
    the whole-address DNAT rule, delete every namespace conntrack entry whose
    original or reply tuple contains that ExternalIP, and verify that the owned
    rule and conntrack state are absent before cleanup succeeds.
@@ -1480,8 +1491,8 @@ default-deny readiness gate or claim an in-use SecurityGroup deletion protocol.
 | DHCP lease absent or ambiguous | Requery; do not update status or create DNAT until identity/freshness checks pass | Condition identifies lease-unavailable/ambiguous |
 | AAP lease artifact is stale or job failed | Ignore artifact, retain current status, retry current generation | Job failure and resource condition remain visible |
 | Forwarding baseline or owned NAT rule application fails | Retry the desired generation without reporting Ready; preserve the saved route/NAT inputs | The affected resource condition and job history identify the forwarding or NAT operation failure |
-| DNAT/SNAT or BGP announcement partially fails | Compare desired state with the saved owner state and repair; do not report Ready until both the exact rule and `/32` route are observed | Attachment/NAT condition identifies the translation or route failure |
-| ExternalIP allocation succeeds but DNAT or route advertisement does not | Keep ExternalIP allocated, keep ExternalIPAttachment non-ready, retain its consumer reservation and `status.attached=true`, and retry using the same address/next hop | Attachment condition identifies the DNAT or external-route failure |
+| DNAT/SNAT or local FRR route setup partially fails | Compare desired state with the saved owner state and repair; do not report Ready until the exact translation and local `/32` route are observed | Attachment/NAT condition identifies the translation or route failure |
+| ExternalIP allocation succeeds but DNAT or local route setup does not | Keep ExternalIP allocated, keep ExternalIPAttachment non-ready, retain its consumer reservation and `status.attached=true`, and retry using the same address/next hop | Attachment condition identifies the DNAT or local-route failure |
 | External endpoint observes a node address instead of the NATGateway ExternalIP | Remove any MASQUERADE rule from this path, install explicit `SNAT --to-source`, and verify the observed source before Ready | NATGateway remains non-ready with a source-address diagnostic |
 | BGP withdrawal or owned NAT cleanup fails | Retain the consumer and ExternalIP finalizers, keep capacity reserved, and retry from the persisted route/rule state; never release an address while its `/32` or translation remains | Resource remains terminating with external-cleanup condition |
 | Consumer cleanup completes but service acknowledgement is lost | Replay `CONSUMER_CLEANUP_COMPLETE` by UUID and digest; service clears the consumer reservation exactly once | `status.attached` remains true until the acknowledgement is durable |
@@ -2021,11 +2032,9 @@ existing mono-repo and tests/e2e patterns.
 
 ## Provenance
 
-Authored: revise @ design 0.9.0 - 562b610, workspace main @ 0ae795e37
-Final: respond @ design 0.11.1 - f1d6a4b, workspace main @ b9575896d (dirty)
-
-> Context changed between revise and respond.
+Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
+Phases: revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.1","ai_workflows":"f1d6a4b","source_repo":"b9575896d (dirty)","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise","revise","draft","respond","respond","respond","respond","manual-edit","respond","revise","respond","respond","respond"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
