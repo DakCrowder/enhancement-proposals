@@ -33,13 +33,12 @@ actions (organization lifecycle, role changes, IdP configuration, project
 permissions). This first increment captures events from services that
 already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
-- Keycloak authentication event capture: login success/failure, token
-operations, session events — derived from Keycloak's native audit
-events and captured per tenant organization via the Keycloak realm.
-Keycloak is the first external system the audit log must ingest from;
-including it in the first increment ensures the design accounts for
-event sources outside the OSAC fulfillment pipeline from day one.
-[Clarify: D3]
+- Authentication events from the organization's Keycloak realm — login
+success/failure, token operations, session events — appear in the
+tenant's audit trail. Keycloak is the first external system the audit
+log must ingest from; including it in the first increment ensures the
+design accounts for event sources outside the OSAC fulfillment pipeline
+from day one. [Clarify: D3]
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
 Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
