@@ -134,15 +134,17 @@ platform-wide placement guarantee.
 
 ## Dependencies
 
-- **OSAC-6154 (blocking):** Each audit record must identify the user who
-initiated the action. Until OSAC-6154 delivers this capability, audit
-records cannot attribute actions to users. The audit log cannot ship
-without it. [Clarify: D2]
+- **OSAC-6154 (blocking):** Fulfillment event audit records must
+identify the user who initiated the action. Until OSAC-6154 delivers
+actor attribution for fulfillment events, those audit records cannot
+attribute actions to users. [Clarify: D2]
 - **OSAC-983 (satisfied):** The audit log depends on platform event
 delivery infrastructure that is already in place (OSAC-983 is Closed).
 - **Keycloak authentication events:** Authentication events (login,
-token, session) originate from Keycloak and must be available to the
-audit log independently of resource lifecycle events. [Clarify: D3]
+token, session) originate from Keycloak and carry their own actor
+identity independently of OSAC-6154. These events must be available
+to the audit log independently of resource lifecycle events.
+[Clarify: D3]
 
 ---
 
