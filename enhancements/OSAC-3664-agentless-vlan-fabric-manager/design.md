@@ -3,7 +3,7 @@ title: agentless-vlan-fabric-manager
 authors:
   - yonibettan@gmail.com
 creation-date: 2026-09-08
-last-updated: 2026-09-22
+last-updated: 2026-10-21
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-3664
   - https://redhat.atlassian.net/browse/OSAC-4307
@@ -29,9 +29,10 @@ This design registers 'agentless_net' as a pluggable physical fabric manager and
 implements the existing OSAC Networking API on managed-switch infrastructure.
 The implementation reuses the NetworkClass/dispatcher lifecycle, maps each
 VirtualNetwork to an isolated Linux routing namespace, maps each Subnet to a
-unique VLAN, and provisions DHCP, permit-all forwarding, BGP-backed external
-reachability, whole-address DNAT, and explicit-source SNAT through Ansible
-roles.
+unique VLAN, and provisions DHCP, permit-all forwarding, provider-managed
+external route distribution, local FRR routes for ExternalIPAttachment,
+NATGateway BGP routes, whole-address DNAT, and explicit-source SNAT through
+Ansible roles.
 See [PRD](prd.md) for detailed requirements.
 
 ## Motivation
@@ -107,11 +108,15 @@ validation, tenancy, durable ExternalIP allocation/consumer reservations, and
 pool capacity accounting; the operator owns CRDs, finalizers, dependency
 checks, and observed status. AgentlessNet owns provider-side pool and
 ExternalIP address allocation in its locked state file, as well as
-VirtualNetwork/Subnet realization, per-VirtualNetwork transit links, BGP `/32`
-reachability, the permit-all forwarding baseline, BMF port binding, DNAT, and
-SNAT. It writes provider-result annotations after state-file commits; the
-operator exposes a validated address as `ExternalIP.status.address`. [PRD:
-FR-1, FR-2]
+VirtualNetwork/Subnet realization, per-VirtualNetwork transit links, the local
+ExternalIPAttachment route, NATGateway BGP `/32` reachability, the permit-all
+forwarding baseline, BMF port binding, DNAT, and SNAT. For ExternalIP contract
+v1, AAP returns the provider result in the same-job
+`osac_result` artifact; the operator validates it against the submitted
+ExternalIP and pool inputs before exposing the address as
+`ExternalIP.status.address`. Managers that remain unversioned retain the legacy
+annotation handoff. [Codebase: osac-operator/internal/controller/externalip_contract.go;
+PRD: FR-1, FR-2]
 
 The flow below shows the ownership boundary. The operator selects the
 implementation strategy and starts generic AAP jobs; the agentless template
@@ -174,8 +179,9 @@ state.
    [Locked: D6, D7] [Codebase: osac-ux/libs/ui-components/src/api/v1/networking.ts]
 5. The provider supplies the existing agentless inventory and credentials
    configuration. The inventory describes the Cumulus switches, network nodes,
-   interfaces, provider-facing external interface, BGP peer/session, and
-   connection data required by AAP. It also supplies a transit CIDR pool that
+   interfaces, provider-facing external interface, and connection data
+   required by AAP. It supplies BGP peer/session configuration for NATGateway
+   route distribution and a transit CIDR pool that
    does not overlap tenant Subnets. VLAN allocation is internal state from the
    configured VLAN-ID pool; DHCP is created per Linux namespace; and the state
    file is managed on the network node. These are not tenant or Enclave Wizard
@@ -328,12 +334,18 @@ service-specific input contracts are not expanded here. [Locked: D1, D2]
    fails. The agentless `create_external_ip` AAP job reads the pool entry from
    the locked state file, reuses an existing allocation for the ExternalIP UID
    when retrying, or selects and persists the first available IPv4 address.
-   After the provider entry commits, the role patches the allocated-address and
-   provider-result annotations together on the ExternalIP CR and fails the AAP
-   job if that patch is rejected. The operator validates those annotations,
-   records the `COMMITTED` provider event in fulfillment-service, and only then
-   writes the address to `ExternalIP.status.address` and marks the ExternalIP
-   ALLOCATED. Allocation alone still has no data-plane route or NAT rule.
+   For `externalIPContractVersion: v1`, AAP returns
+   `osac_result.data.address` in the same job and does not patch the ExternalIP
+   CR. The operator accepts only a successful current job whose ExternalIP UID,
+   generation, operation, and submitted pool snapshot match the current
+   ExternalIP and pool. It validates the address against the pool before
+   recording the `COMMITTED` provider event in fulfillment-service and writing
+   `ExternalIP.status.address`. Managers that remain on the unversioned
+   contract retain the allocated-address and provider-result annotation
+   handoff; annotation-only evidence is not accepted for v1. Allocation alone
+   still has no data-plane route or NAT rule. [Codebase:
+   osac-operator/internal/controller/externalip_contract.go;
+   osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net/tasks/_external_ip.yaml]
    `ExternalIP` readiness means that a concrete address is allocated; it does
    not mean that inbound traffic is usable. Inbound readiness is represented by
    the separate ExternalIPAttachment resource.
@@ -355,17 +367,24 @@ service-specific input contracts are not expanded here. [Locked: D1, D2]
    agentless `create_external_ip_attachment` operation. The role resolves the
    target VirtualNetwork and its persisted transit link, installs one owned
    whole-address DNAT rule from `ExternalIP.status.address` to the target
-   address, and then announces the exact ExternalIP `/32` through BGP with the
-   namespace-side transit address as the next hop. The route is announced only
-   after the namespace, forwarding path, and DNAT rule are present. The
-   VirtualNetwork permit-all baseline is reconciled by the VirtualNetwork
-   lifecycle; the attachment operation does not create or update policy
-   resources.
+   address, and installs the consumer-owned local FRR `/32` route using the
+   saved namespace-side transit address as its next hop. For AgentlessNet
+   contract v1, the controller supplies the ExternalIP, BareMetalInstance,
+   primary Subnet, and parent VirtualNetwork identity/readiness/address
+   snapshot with the attachment CR. AAP consumes this job input and saved
+   provider state; it does not query Kubernetes or update OSAC CRs. It returns
+   the v1 attach artifact only after its DNAT, forwarding, and local FRR route
+   checks pass. The VirtualNetwork permit-all baseline is reconciled by the
+   VirtualNetwork lifecycle; the attachment operation does not create or
+   update policy resources.
 6. The attachment remains Pending or Progressing until both the parent
    ExternalIP address and the target address are current, the whole-address
-   DNAT rule is present, and the BGP `/32` is observed as installed. It reaches
-   Ready only after those checks and status feedback confirm the operation. If
-   allocation succeeds but DNAT or route advertisement fails, the
+   DNAT rule and local FRR `/32` route are present, and the controller accepts
+   the matching result artifact from the same AAP job. It reaches Ready only
+   after those checks and status feedback confirm the operation. Upstream BGP
+   peering and policy remain provider configuration outside the AAP job; the
+   deployed external-client probe verifies the packet path. If allocation
+   succeeds but DNAT or local-route setup fails, the
    ExternalIPAttachment remains non-ready; `status.attached` remains true
    because the consumer reservation still prevents a second user. The address
    remains reserved for retry or ordered cleanup. For a Cluster target,
@@ -423,9 +442,9 @@ NATGateway is outbound only. It does not create an inbound DNAT mapping.
 
 The external packet paths are:
 
-- Inbound: the upstream fabric receives the BGP advertisement for
-  `<external-ip>/32` and sends the packet to the authoritative net node. The
-  net-node route forwards it through the host side of the VirtualNetwork's
+- Inbound: provider route policy delivers the external destination to the
+  authoritative net node. Its local FRR static route for `<external-ip>/32`
+  forwards through the host side of the VirtualNetwork's
   transit veth to the namespace-side next hop. Namespace `PREROUTING` applies
   the attachment's whole-address DNAT to the target private address; the
   `FORWARD` baseline permits it and the Subnet interface delivers it to the
@@ -440,24 +459,30 @@ The external packet paths are:
   reverses the SNAT to the target's private address.
 
 The ExternalIP is not assigned as a floating address to an arbitrary host
-interface. The BGP `/32`, the persisted transit next hop, and the namespace NAT
-state together provide reachability and make repair/deletion deterministic.
+interface. For ExternalIPAttachment, the local FRR `/32`, saved transit next
+hop, and namespace DNAT state make repair/deletion deterministic. NATGateway
+uses its separate provider BGP `/32` route for return traffic.
 
-The provider underlay contract is explicit. The provider inventory must have a
-working FRR/BGP session and upstream route policy before `agentless_net` is
-Ready; those peer/session settings are provider configuration, not tenant
-inputs. The existing `agentless_net.l3.bgp` primitive does not establish the
-upstream BGP session. It adds or removes the consumer-owned local FRR static
-route `<external-ip>/32 via <namespace-transit-next-hop>`, which FRR then
-advertises over the provider-owned session. Agentless owns that local route and
-the consumer UID; the provider owns the BGP peer and upstream policy.
+The provider underlay contract is explicit. Provider route policy must deliver
+external traffic to the net node; BGP peer/session settings are provider
+configuration, not tenant inputs. For ExternalIPAttachment, the AAP job
+installs and verifies only the consumer-owned local FRR static route
+`<external-ip>/32 via <namespace-transit-next-hop>`. Provider configuration
+may distribute that local route to its peer. The job does not query the
+upstream router or claim to verify remote BGP convergence. NATGateway keeps the
+provider-owned BGP announce/withdraw operation. Agentless owns the local
+attachment route and consumer UID; the provider owns route distribution and
+the BGP peer/policy.
 
-An attachment or NATGateway is Ready only after the local FRR route is present,
-the provider route check confirms the `/32` is advertised/reachable upstream,
-and the namespace translation is installed. Cleanup withdraws the exact local
-route, verifies that upstream reachability is gone, and only then removes the
-translation and permits ExternalIP cleanup. A failed or unavailable upstream
-check leaves the consumer non-ready and retains its finalizer and reservation.
+An ExternalIPAttachment is Ready only after its local route and namespace
+translation are present and the controller accepts the matching v1 AAP result
+artifact. The deployed external-client test verifies packet reachability.
+Cleanup withdraws the exact local route and verifies it is absent before
+removing the translation or permitting ExternalIP cleanup. A failed local
+route or translation check leaves the consumer non-ready and retains its
+finalizer and reservation. This attachment contract does not change NATGateway
+readiness or result handling. [Codebase:
+`osac-aap/collections/ansible_collections/osac/templates/plugins/module_utils/agentless_net_external_ip.py`]
 [Codebase: osac-aap/collections/ansible_collections/agentless_net/l3/roles/bgp]
 
 #### Failure and recovery workflow
@@ -487,8 +512,8 @@ failure message in the existing provisioning history and status condition.
 #### Deletion and cleanup
 
 1. The resource controller observes deletion and retains its finalizer.
-2. For an ExternalIPAttachment, withdraw its ExternalIP `/32` BGP route and
-   wait until the route is absent from the net-node routing/BGP state. Remove
+2. For an ExternalIPAttachment, withdraw its ExternalIP `/32` local FRR route
+   and wait until it is absent from the net-node RIB. Remove
    the whole-address DNAT rule, delete every namespace conntrack entry whose
    original or reply tuple contains that ExternalIP, and verify that the owned
    rule and conntrack state are absent before cleanup succeeds.
@@ -537,12 +562,15 @@ No new public gRPC service, REST resource, protobuf field, CRD kind, or webhook
 is introduced. Existing fabric-facing resources receive the agentless backend.
 The fulfillment-service adds an internal, non-tenant reservation record and a
 private provider-result operation; neither is exposed through the public API or
-REST surface. Agentless AAP roles allocate provider-side pool addresses and
-write the established `osac.openshift.io/allocated-address` annotation plus a
-validated provider-result annotation. ExternalIPAttachment and NATGateway use
-the resulting `ExternalIP.status.address` for DNAT/SNAT. Existing status and
-condition fields carry observed readiness and diagnostic failures. [Locked: D3,
-D5, D9]
+REST surface. Agentless AAP roles allocate provider-side pool addresses. Under
+ExternalIP contract v1 they return a same-job `osac_result`; the operator
+validates it before writing `ExternalIP.status.address`. The legacy
+`osac.openshift.io/allocated-address` and provider-result annotation handoff
+remains for managers using the unversioned contract. ExternalIPAttachment and
+NATGateway consume `ExternalIP.status.address` for DNAT/SNAT. Existing status
+and condition fields carry observed readiness and diagnostic failures. [Locked:
+D3, D5, D9; Codebase:
+osac-operator/internal/controller/externalip_contract.go]
 
 The implementation changes the following existing surfaces:
 
@@ -551,9 +579,9 @@ The implementation changes the following existing surfaces:
 | IC-1 | Installer values, manager ConfigMap, NetworkClass selection | Register and select 'agentless_net' as a fabric manager with IPv4 capability | FR-1, NFR-1 |
 | IC-2 | VirtualNetwork and Subnet API/CR lifecycle | Route existing fabric resources through the agentless dispatcher and realize VLAN, namespace, forwarding baseline, and cleanup state | FR-2, FR-3, FR-10, NFR-2, NFR-3 |
 | IC-3 | Fabric network-attachment and DHCP feedback path | Attach and detach BM/CaaS/VM targets through a backend-neutral stable binding contract, restore the provider provisioning network on offboarding, and surface fabric-assigned IPs for BM/CaaS | FR-4, FR-8 |
-| IC-4 | ExternalIPPool, ExternalIP, and ExternalIPAttachment lifecycle | Persist an ExternalIP-UID reservation in fulfillment-service, allocate provider-side addresses through the locked AAP state file, transport and validate the provider result, install whole-address DNAT, and announce/withdraw the consumer-owned ExternalIP `/32` route | FR-5, FR-7, FR-10, NFR-2, NFR-3 |
+| IC-4 | ExternalIPPool, ExternalIP, and ExternalIPAttachment lifecycle | Persist an ExternalIP-UID reservation in fulfillment-service, allocate provider-side addresses through the locked AAP state file, transport and validate the provider result, install whole-address DNAT, and install/withdraw the saved local FRR `/32` route for ExternalIPAttachment without requiring upstream BGP convergence | FR-5, FR-7, FR-10, NFR-2, NFR-3 |
 | IC-5 | NATGateway lifecycle | Apply explicit outbound SNAT using the address in `ExternalIP.status.address`, announce/withdraw its `/32` route, and never replace it with host/interface MASQUERADE | FR-6, FR-10, NFR-2, NFR-3 |
-| IC-6 | Resource status, conditions, events, and job history | Surface manager registration, provisioning, DHCP, switch, forwarding, BGP route, NAT, provider-result handshake, reservation, and cleanup failures with diagnostic reasons | FR-9, NFR-2 |
+| IC-6 | Resource status, conditions, events, and job history | Surface manager registration, provisioning, DHCP, switch, forwarding, attachment local-route, NATGateway BGP-route, provider-result handshake, reservation, and cleanup failures with diagnostic reasons | FR-9, NFR-2 |
 
 #### Existing resource and metadata constraints
 
@@ -604,15 +632,15 @@ digest is an aborted conflict. Only the operator calls this private operation
 after validating the AAP result. [Codebase:
 fulfillment-service/proto/private/osac/private/v1/external_ips_service.proto]
 
-The provider-result annotations are part of the internal controller contract:
-`osac.openshift.io/allocated-address` carries the committed address,
-`osac.openshift.io/external-ip-provider-event` carries the event,
-`osac.openshift.io/external-ip-provider-operation` carries the AAP operation
-identity, and `osac.openshift.io/external-ip-provider-digest` carries the
-state-file evidence. The ExternalIP reconciler accepts a successful AAP job
-only after these values match the current UUID and desired generation. A
-missing, malformed, stale, or pool-out-of-range result remains retryable and
-does not mark the provisioning version successful.
+For unversioned ExternalIP managers, the
+`osac.openshift.io/allocated-address` annotation is the legacy address
+handoff. Under `externalIPContractVersion: v1`, AAP returns the allocation in
+the same-job `osac_result`. The operator validates its schema, operation,
+resource UID, generation, submitted job inputs, and current pool before writing
+`ExternalIP.status.address`. V1 does not require or consult the allocated-
+address annotation. [Codebase:
+osac-operator/internal/controller/externalip_contract.go;
+osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net/tasks/_external_ip.yaml]
 
 #### NetworkAPI resource CRs and implementation points
 
@@ -800,11 +828,14 @@ with conflict retries and never replaces a stale full status.
 
 The fulfillment-service validates the pool and owns the durable capacity
 reservation, but the agentless AAP job selects the concrete address from the
-provider state file. The role writes the established allocated-address
-annotation and a provider-result annotation. The operator validates the result,
-records the private provider event, and publishes the address in
-`status.address` only after the service acknowledges `COMMITTED`. Allocation
-alone creates no traffic rule; the address is consumed later by an
+provider state file. For ExternalIP contract v1, the role commits provider
+state and returns `osac_result.data.address` without patching the ExternalIP
+CR. The operator validates that result against the successful job's submitted
+ExternalIP and pool inputs, records the private provider event, and publishes
+the address in `ExternalIP.status.address` only after the service acknowledges
+`COMMITTED`. Only managers using the unversioned contract retain the
+allocated-address/provider-result annotation handoff. Allocation alone
+creates no traffic rule; the address is consumed later by an
 ExternalIPAttachment or a NATGateway, subject to the durable consumer
 reservation.
 
@@ -848,9 +879,13 @@ from the existing DHCP lease/status feedback path. If the address is missing
 or stale, it keeps the attachment pending and does not dispatch the AAP job.
 Once the target address is current, AgentlessNet creates an owned DNAT rule
 from `ExternalIP.status.address` to that target, without a protocol or port
-match, and announces the consumer-owned ExternalIP `/32` through BGP using the
-VirtualNetwork transit next hop. The VirtualNetwork permit-all baseline is
-maintained by the VirtualNetwork lifecycle, not by the attachment role.
+match, and installs and verifies the consumer-owned local FRR static route
+`<ExternalIP>/32 via <saved VirtualNetwork transit next hop>`. The attachment
+job verifies the local FRR RIB and does not query upstream BGP convergence;
+route distribution beyond that local route is provider configuration. The
+VirtualNetwork permit-all baseline is maintained by the VirtualNetwork
+lifecycle, not by the attachment role. [Codebase:
+osac-aap/collections/ansible_collections/osac/templates/plugins/module_utils/agentless_net_external_ip.py]
 
 ##### NATGateway
 
@@ -1036,18 +1071,20 @@ external_ips:
     address_ipv4: <address>
 attachments:
   - uid: <external-ip-attachment-uid>
-    external_ip_uid: <uid>
+    fulfillment_id: <external-ip-attachment-uuid>
+    tenant_id: <tenant-id>
+    external_ip_uid: <external-ip-kubernetes-uid>
     virtual_network_uid: <virtual-network-uid>
-    external_ip_address: <ipv4>
-    target_address: <ipv4>
-    target_endpoint: none | api | ingress
-    route_prefix: <external-ip>/32
-    route_next_hop: <namespace-transit-ip>
-    route_protocol: bgp
-    route_announced: true
-    dnat:
-      scope: address
-      protocols: all
+    subnet_uid: <subnet-uid>
+    external_address: <ipv4>
+    phase: provisioning | ready | deleting
+    context: <validated ExternalIP, target, Subnet, VirtualNetwork snapshot>
+    provider:
+      namespace_name: <VirtualNetwork namespace>
+      namespace_interface: <namespace veth>
+      host_interface: <host veth>
+      external_interface: <provider uplink>
+      next_hop: <saved namespace transit address>
 nat_gateways:
   - uid: <nat-gateway-uid>
     external_ip_uid: <uid>
@@ -1082,14 +1119,17 @@ port_bindings:
     operation_id: <idempotency-key>
 ~~~
 
-The `virtual_networks.transit` entry is allocated from the provider-configured
-transit pool once per VirtualNetwork. `namespace_ip` is the next hop passed to
-the BGP route action; `host_ip` is the peer on the net node; `gateway` is the
-default route used inside the namespace; and `external_interface` is the
-provider-facing net-node interface used for egress. The
-`external_reachability` mode is `bgp` for this milestone: each active
-ExternalIP consumer owns one `<address>/32` announcement, and no L2/ARP
-reachability alternative is claimed.
+The `attachments` entry stores its validated context and provider interfaces,
+including the saved next hop. Its local FRR route is derived from
+`external_address` and `provider.next_hop`; the entry has no BGP
+`route_announced` state. AAP installs/removes the static route and verifies it
+in the local FRR RIB. The `virtual_networks.transit` entry is allocated from
+the provider-configured transit pool once per VirtualNetwork. `namespace_ip`
+is the next hop for the local attachment route and the NATGateway BGP action;
+`host_ip` is the peer on the net node; `gateway` is the default route used
+inside the namespace; and `external_interface` is the provider-facing net-node
+interface used for egress. NATGateway retains the provider-configured BGP
+`/32` behavior. The attachment job does not verify upstream route convergence.
 
 The fulfillment-service `external_ip_reservations` record is separate from
 this provider state file. The service row owns API capacity, allocation and
@@ -1167,8 +1207,8 @@ in the unified state file. [Codebase: osac-aap/collections/ansible_collections/a
 | VirtualNetwork create/update/delete | Add or reconcile one `virtual_networks` entry, including its transit `/30`, veth identities, and external-reachability mode; remove it only when the VirtualNetwork object is deleted and its child entries are gone | Allocate or reuse the transit link; create or repair the namespace, uplink, default route, and permit-all baseline; remove the link during ordered cleanup |
 | Subnet create/update/delete | Add or reuse one `subnets` entry with VLAN interface, gateway, DHCP range, exclusions, and state generation; remove it and release the VLAN only when the Subnet object is deleted and dependent bindings are gone | Create or repair the switch VLAN, namespace interface, gateway, dnsmasq range, and lease mapping; reload the per-VN daemon; reconcile any active NATGateway `source_cidrs`; no host access-port binding during Subnet provisioning |
 | ExternalIPPool create/delete | Add or reconcile one `external_ip_pools` entry; remove it only when the ExternalIPPool object is deleted | Register or remove provider-side pool CIDRs under the state-file lock; fulfillment-service remains authoritative for capacity counters |
-| ExternalIP create/delete | Create or reuse one fulfillment-service reservation keyed by ExternalIP UUID; add or reuse one complete `external_ips` provider entry keyed by the same UUID; accept provider and consumer cleanup events; release capacity only in the service's idempotent `RELEASED` transaction | Select and persist a complete IPv4 allocation atomically under the state-file lock, patch the provider-result annotations, and remove provider state before the service acknowledges capacity release |
-| ExternalIPAttachment create/delete | Atomically reserve the ExternalIP consumer in fulfillment-service; add, replace, or remove one `attachments` entry containing the target, whole-address DNAT, `/32` route, saved next hop, and route-announced state; retain the reservation through cleanup | Read the address from `ExternalIP.status.address` and target status, create the all-protocol DNAT rule, announce or withdraw the owned BGP `/32`, then report consumer cleanup to the service |
+| ExternalIP create/delete | Create or reuse one fulfillment-service reservation keyed by ExternalIP UUID; add or reuse one complete `external_ips` provider entry keyed by the same UUID; accept provider and consumer cleanup events; release capacity only in the service's idempotent `RELEASED` transaction | Select and persist a complete IPv4 allocation atomically under the state-file lock; for v1, return `osac_result.data.address` without patching the CR; keep the annotation handoff only for unversioned managers; remove provider state before the service acknowledges capacity release |
+| ExternalIPAttachment create/delete | Atomically reserve the ExternalIP consumer in fulfillment-service; add, replace, or remove one `attachments` entry containing validated context and saved provider identity/next hop; retain the reservation through cleanup | Read the address from `ExternalIP.status.address` and target status, create the all-protocol DNAT rule, install/verify or withdraw/verify the saved local FRR `/32`, then report consumer cleanup to the service |
 | NATGateway create/delete | Atomically reserve the ExternalIP consumer in fulfillment-service; add or remove one `nat_gateways` entry containing all current source CIDRs, explicit SNAT address, `/32` route, saved next hop, and route-announced state; retain the reservation through cleanup | Read the address from `ExternalIP.status.address`, create explicit `SNAT --to-source` rules, announce or withdraw the owned BGP `/32`, then report consumer cleanup to the service |
 | BMF attachment bind/unbind | Add or reconcile one `port_bindings` entry keyed by binding UID, host/interface/MAC, Subnet, tenant VLAN, and provisioning-network identity | For attach, reset-plus-set the access port to the resolved Subnet VLAN; for detach, reset-plus-set it back to the saved provisioning VLAN and remove state only after verification |
 
@@ -1182,16 +1222,16 @@ address. A failed allocation with no committed entry keeps the same service
 reservation while retryable; terminal failure or deletion requires a validated
 `NOT_COMMITTED` event before the service can release it. [User]
 
-For an ExternalIP consumer, the desired route and translation state is recorded
-with the consumer UID before the AAP action starts. The role applies the
-namespace translation first, announces the saved `/32` with the saved next hop,
-and sets `route_announced: true` only after both the data-plane rule and route
-are observed. A retry uses those same values. Cleanup reverses that order from
-the outside in: withdraw and verify the route, remove and verify the owned NAT
-rule, delete and verify owner-specific conntrack state, and report
-`CONSUMER_CLEANUP_COMPLETE` to fulfillment-service. The service then clears the
-consumer reservation and `status.attached`; only after that and the provider
-`CLEANUP_COMPLETE` event can the allocation reservation be released.
+For an ExternalIPAttachment, the controller persists the consumer reservation
+and AAP saves the attachment context and provider next hop before changing the
+data plane. The role applies forwarding and DNAT, then installs and verifies
+the local FRR `/32` route in the net-node RIB. It does not announce the route
+through a job-managed BGP action or wait for an upstream peer. Cleanup withdraws
+and verifies that saved local route before removing the owned DNAT/forwarding
+rules and conntrack state, then reports `CONSUMER_CLEANUP_COMPLETE` to
+fulfillment-service. NATGateway keeps its separate BGP announce/withdraw flow
+around explicit SNAT. The service clears `status.attached` after consumer
+cleanup; provider `CLEANUP_COMPLETE` then permits allocation capacity release.
 
 #### DHCP and lease feedback
 
@@ -1274,11 +1314,13 @@ model and AAP action contract. [PRD: FR-3, FR-5, FR-6] [User]
 ExternalIPPool API objects, aggregate capacity counters, and the durable
 ExternalIP-UID reservation remain fulfillment-service state. AgentlessNet
 maintains provider-side pool and concrete ExternalIP allocation entries in its
-locked state file. The AAP allocation role first commits the complete
-`external_ips` entry, then patches the provider-result annotations. The
-operator validates the current UUID, generation, pool membership, address, and
-state digest before recording `COMMITTED` in fulfillment-service and copying
-the address to `ExternalIP.status.address`.
+locked state file. For ExternalIP contract v1, the AAP allocation role commits
+the complete `external_ips` entry and returns `osac_result.data.address`
+without patching the ExternalIP CR. The operator validates the successful
+job result against the submitted ExternalIP and pool snapshots, then records
+`COMMITTED` in fulfillment-service and copies the address to
+`ExternalIP.status.address`. Only unversioned managers retain the legacy
+allocated-address annotation handoff.
 
 The reservation state machine is:
 
@@ -1292,12 +1334,14 @@ The reservation state machine is:
 `NOT_COMMITTED` is authoritative only when the provider inspected its UID-keyed
 state and found no entry. A failed AAP job without that result cannot release
 capacity; the operator retries an inspect/compensation action. For a committed
-entry, ExternalIPAttachment and NATGateway must first report consumer cleanup,
-then the provider delete action must withdraw the route, remove DNAT/SNAT and
-conntrack state, remove the `external_ips` entry, and report
-`CLEANUP_COMPLETE`. The fulfillment-service then locks the reservation and pool
-and performs the one-time capacity release. No controller, AAP role, or stale
-status update may decrement pool capacity directly.
+entry, ExternalIPAttachment and NATGateway must first report consumer cleanup.
+Attachment cleanup removes and verifies its saved local FRR route, DNAT,
+forwarding rules, and conntrack state. NATGateway cleanup withdraws its BGP
+route and removes its SNAT and conntrack state. The provider then removes the
+`external_ips` entry and reports `CLEANUP_COMPLETE`. The fulfillment-service
+locks the reservation and pool and performs the one-time capacity release. No
+controller, AAP role, or stale status update may decrement pool capacity
+directly.
 
 ExternalIPAttachment creates one destination translation from the address in
 `ExternalIP.status.address` to the target's primary private address, without a
@@ -1311,9 +1355,11 @@ changes the NATGateway SNAT rule.
 NATGateway creates source translations for every current Subnet CIDR in its
 VirtualNetwork, using explicit `SNAT --to-source <ExternalIP.status.address>`
 on the namespace transit egress. The host-side external path must not apply a
-second MASQUERADE. Both consumers use the shared BGP `/32` announce/withdraw
-action with their own saved next hop, but retain separate state sections, role
-entrypoints, and deletion paths. [Locked: D14]
+second MASQUERADE. NATGateway uses the BGP `/32` announce/withdraw action with
+its saved next hop. ExternalIPAttachment instead installs and withdraws its
+saved local FRR static route. They retain separate state sections, role
+entrypoints, and deletion paths. [Locked: D14; Codebase:
+osac-aap/collections/ansible_collections/osac/templates/plugins/module_utils/agentless_net_external_ip.py]
 
 Cross-VirtualNetwork private routing is not installed. If two VNs use
 overlapping CIDRs, their separate namespaces prevent direct private routing.
@@ -1331,10 +1377,11 @@ The agentless implementation must provide:
   ExternalIPPool, ExternalIP, ExternalIPAttachment, and NATGateway.
   fulfillment-service owns ExternalIPPool/API validation and
   capacity and consumer reservations; the ExternalIPPool and ExternalIP roles
-  register CIDRs, allocate concrete addresses in the locked state file, and
-  patch the allocated-address and provider-result annotations. Attachment and
-  NAT roles consume the resulting `ExternalIP.status.address` when programming
-  whole-address DNAT or explicit-source SNAT. The VirtualNetwork entrypoint
+  register CIDRs and allocate concrete addresses in the locked state file.
+  ExternalIP v1 returns a same-job artifact and does not patch the CR; the
+  legacy allocated-address annotation handoff is limited to unversioned
+  managers. Attachment and NAT roles consume `ExternalIP.status.address` when
+  programming whole-address DNAT or explicit-source SNAT. The VirtualNetwork entrypoint
   allocates and repairs the per-VirtualNetwork transit `/30` and veth pair.
 - Generic network attachment entrypoints for create/delete or equivalent
   attach/detach operations. The generic playbook passes a stable binding UID,
@@ -1345,10 +1392,11 @@ The agentless implementation must provide:
   provisioning VLANs, switch port, operation ID, and observed binding state.
 - 'query_dhcp_lease' compatible with the generic query playbook.
 - Shared step roles for VLAN/IPAM, router namespace, dnsmasq DHCP service and
-  lease-store management, forwarding baseline,
-  BGP `/32` announce/withdraw, whole-address DNAT, explicit-source SNAT, and
-  Cumulus port configuration. The BGP action receives the saved `route_prefix`
-  and `route_next_hop`; it must verify withdrawal before cleanup proceeds. All
+  lease-store management, forwarding baseline, local FRR `/32` route handling
+  for ExternalIPAttachment, BGP `/32` announce/withdraw for NATGateway,
+  whole-address DNAT, explicit-source SNAT, and Cumulus port configuration.
+  The NATGateway BGP action receives the saved `route_prefix` and
+  `route_next_hop`; it must verify withdrawal before cleanup proceeds. All
   state-changing roles use the shared sidecar-lock/temp-file/rename transaction
   and do not call the old in-place IPAM writer.
 - Role argument validation and idempotent create/delete behavior.
@@ -1358,9 +1406,11 @@ current Subnet name or a Netris variable. It passes the stable provisioning
 network ID on both directions, and AgentlessNet resolves that ID to a VLAN from
 provider configuration before performing reset-plus-set and verification.
 
-The ExternalIP operator must validate provider-result annotations before treating
-an AAP success as a successful reconciliation. The shared provisioning
-lifecycle therefore needs a pre-success validation callback (or equivalent
+The ExternalIP operator must validate the v1 `osac_result` against the current
+successful job and submitted pool input before treating AAP success as a
+successful reconciliation. The legacy allocated-address annotation is
+consumed only for unversioned managers. The shared provisioning lifecycle
+therefore needs a pre-success validation callback (or equivalent
 ExternalIP-specific gate) that runs before recording the successful config
 version. A malformed or missing result remains retryable; it must not be
 converted into `ALLOCATED` with an empty address.
@@ -1463,27 +1513,28 @@ default-deny readiness gate or claim an in-use SecurityGroup deletion protocol.
 | VLAN state sidecar lock unavailable | Retry with backoff; preserve existing allocation and do not use the data-file inode as a lock | Provisioning remains pending with lock diagnostic |
 | State JSON is malformed, truncated, or an unknown schema version | Fail closed; do not allocate, release, or mutate provider state. Validate the `.bak` generation and require the explicit recovery action | Resource condition identifies `StateCorrupt`; existing state remains untouched |
 | Crash leaves a stale state temporary file or backup | Ignore temporary files; validate current state and `.bak` under the sidecar lock, then resume only after one complete generation is selected | Recovery event identifies the selected last-known-good generation |
-| Net node is unreachable or its BGP/dnsmasq preflight fails | Block all fabric mutations, provider commits, cleanup releases, and finalizer removal; requeue after health recovers | `NetNodeUnavailable` condition is visible; existing resources remain degraded |
-| Net-node restore cannot rehydrate namespaces, DHCP, routes, or translations | Keep mutations and releases blocked; restore from the validated backup or surface the exact failed phase | `NetNodeRestoreFailed` condition identifies the phase; no new `/32` is advertised |
+| Net node is unreachable or state/dnsmasq validation fails | Block fabric mutations, provider commits, cleanup releases, and finalizer removal; requeue after local health recovers | `NetNodeUnavailable` condition is visible; existing resources remain degraded |
+| Net-node restore cannot rehydrate namespaces, DHCP, local attachment routes, or translations | Keep mutations and releases blocked; restore from the validated backup or surface the exact failed phase | `NetNodeRestoreFailed` condition identifies the phase; attachments remain non-ready and NATGateway route changes are not reported successful |
 | VLAN allocation exhausted or already owned | Do not reuse an allocated ID; fail the requested generation | Failed condition identifies VLAN allocation exhaustion/conflict |
 | ExternalIP state sidecar lock unavailable or pool has no free address | Retry without changing an existing `HELD` reservation; do not publish an address or bypass the shared lock | ExternalIP remains non-ready with an allocation diagnostic and capacity remains held once |
-| ExternalIP provider-result annotation is missing, stale, malformed, or out of pool | Reject the result before `ALLOCATED`; retain the same reservation and retry the current generation; do not record a successful config version | ExternalIP remains Pending/Progressing with a provider-result condition |
+| ExternalIP v1 result artifact is missing, stale, malformed, mismatched, or out of pool; or an unversioned annotation handoff is invalid | Reject the result before `ALLOCATED`; retain the same reservation and retry the current generation; do not record a successful config version | ExternalIP remains Pending/Progressing with a provider-result condition |
 | ExternalIP allocation fails before atomic provider-state commit | Require a provider `NOT_COMMITTED` result or an inspect job before compensation; retain capacity while retryable and release it exactly once only after terminal failure/deletion | ExternalIP remains non-ready during retry; capacity is restored only after authoritative compensation |
 | ExternalIP deletion races allocation or provider cleanup | Serialize by ExternalIP UUID; keep `release_requested` and the finalizer until `NOT_COMMITTED` or `CLEANUP_COMPLETE` is acknowledged by fulfillment-service | No address becomes reusable until provider state, consumer state, and API reservation agree |
 | Switch VLAN or access-port operation fails | Retry the same binding UID with the saved host/MAC, switch port, tenant VLAN, and provisioning VLAN; do not release or forget the binding on partial failure | AAP failure and resource status contain switch error; the port remains in the last verified state |
 | BMaaS reboot, power-off, or post-move DHCP gate fails | Keep the binding phase and BMF finalizer, retry the host lifecycle operation, and do not start or complete IP discovery until the matching handoff condition is true | `NetworkHandoffComplete` or `NetworkOffboardComplete` remains false with a diagnostic condition |
 | BMaaS detach cannot resolve the provisioning network | Fail closed and retain the binding/finalizer; do not leave the host on a tenant VLAN or guess from a display name | Resource remains terminating with provisioning-network diagnostic |
-| Transit-pool allocation or veth/router setup partially fails | Reuse the UID-keyed transit `/30` and saved interface/IP values on retry; do not announce any ExternalIP route until the namespace and default route are verified | VirtualNetwork or dependent consumer remains non-ready with a transit-link diagnostic |
+| Transit-pool allocation or veth/router setup partially fails | Reuse the UID-keyed transit `/30` and saved interface/IP values on retry; do not install an attachment local route or announce a NATGateway BGP route until the namespace and default route are verified | VirtualNetwork or dependent consumer remains non-ready with a transit-link diagnostic |
 | Namespace/VLAN interface creation partially fails | Reconcile desired namespace and interfaces; remove only orphaned state on delete | Resource remains non-ready with net-node error |
 | NATGateway source CIDR set is stale during Subnet add/delete | Requeue NATGateway from the Subnet event; add/remove the individual SNAT rule, persist the new `source_cidrs_revision`, and block Subnet deletion until removal is verified | NATGateway condition identifies stale source rules; Subnet remains pending deletion or readiness |
 | dnsmasq configuration, service, or lease file is missing/malformed | Re-render the complete per-VN configuration, preserve a valid lease file, restart the supervised daemon, and requeue; never invent a lease | DHCP condition identifies daemon/config/lease failure and IP discovery remains pending |
 | DHCP lease absent or ambiguous | Requery; do not update status or create DNAT until identity/freshness checks pass | Condition identifies lease-unavailable/ambiguous |
 | AAP lease artifact is stale or job failed | Ignore artifact, retain current status, retry current generation | Job failure and resource condition remain visible |
 | Forwarding baseline or owned NAT rule application fails | Retry the desired generation without reporting Ready; preserve the saved route/NAT inputs | The affected resource condition and job history identify the forwarding or NAT operation failure |
-| DNAT/SNAT or BGP announcement partially fails | Compare desired state with the saved owner state and repair; do not report Ready until both the exact rule and `/32` route are observed | Attachment/NAT condition identifies the translation or route failure |
-| ExternalIP allocation succeeds but DNAT or route advertisement does not | Keep ExternalIP allocated, keep ExternalIPAttachment non-ready, retain its consumer reservation and `status.attached=true`, and retry using the same address/next hop | Attachment condition identifies the DNAT or external-route failure |
+| DNAT/SNAT or local FRR route setup partially fails | Compare desired state with the saved owner state and repair; do not report Ready until the exact translation and local `/32` route are observed | Attachment/NAT condition identifies the translation or route failure |
+| ExternalIP allocation succeeds but DNAT or local route setup does not | Keep ExternalIP allocated, keep ExternalIPAttachment non-ready, retain its consumer reservation and `status.attached=true`, and retry using the same address/next hop | Attachment condition identifies the DNAT or local-route failure |
 | External endpoint observes a node address instead of the NATGateway ExternalIP | Remove any MASQUERADE rule from this path, install explicit `SNAT --to-source`, and verify the observed source before Ready | NATGateway remains non-ready with a source-address diagnostic |
-| BGP withdrawal or owned NAT cleanup fails | Retain the consumer and ExternalIP finalizers, keep capacity reserved, and retry from the persisted route/rule state; never release an address while its `/32` or translation remains | Resource remains terminating with external-cleanup condition |
+| ExternalIPAttachment local-route withdrawal or DNAT cleanup fails | Retain the consumer and ExternalIP finalizers, keep capacity reserved, and retry from the saved address and next hop; do not release while the local `/32`, DNAT/forwarding rules, or conntrack state remains | Attachment remains terminating with an external-cleanup condition |
+| NATGateway BGP withdrawal or SNAT cleanup fails | Retain the consumer and ExternalIP finalizers, keep capacity reserved, and retry from the persisted BGP route and SNAT state; do not release while the route or translation remains | NATGateway remains terminating with an external-cleanup condition |
 | Consumer cleanup completes but service acknowledgement is lost | Replay `CONSUMER_CLEANUP_COMPLETE` by UUID and digest; service clears the consumer reservation exactly once | `status.attached` remains true until the acknowledgement is durable |
 | Provider cleanup completes but capacity-release acknowledgement is lost | Replay `CLEANUP_COMPLETE`; the service's `RELEASED` transition is idempotent and the operator retries finalizer removal | Pool capacity changes once and the ExternalIP finalizer eventually clears |
 | Status writers race or return stale snapshots | Patch only owned fields after a fresh read and retry conflicts; never replace full ExternalIP status | Address, attached flag, conditions, and provisioning history are not lost |
@@ -1498,8 +1549,9 @@ restart or lost job response. [Codebase: osac-operator/pkg/provisioning/provisio
 
 This milestone has one authoritative net node and no automatic standby. A
 net-node preflight checks reachability, state-file validation, namespace
-inventory, dnsmasq services, and the provider BGP session before a fabric
-mutation is accepted. When the node is unavailable, the operator reports
+inventory, and dnsmasq services before a fabric mutation is accepted. BGP
+peer/session availability concerns NATGateway route distribution; an
+ExternalIPAttachment is checked against its local FRR route. When the node is unavailable, the operator reports
 `NetNodeUnavailable`, blocks new or modifying VirtualNetwork/Subnet,
 attachment, NAT, and ExternalIP provider operations, and retains all relevant
 finalizers and capacity reservations. It does not mark an unobserved provider
@@ -1515,9 +1567,10 @@ restore sequence completes.
 Recovery acquires the sidecar state lock, validates the current generation or
 explicitly restores the last-known-good backup, then recreates namespaces,
 veths, VLAN interfaces, gateways, forwarding, dnsmasq from preserved lease
-files, and owned DNAT/SNAT rules. It restores BGP `/32` routes only after the
-corresponding namespace path and translations are verified. Conntrack state is
-not persisted; old connections must reconnect, while new connections are
+files, and owned DNAT/SNAT rules. It restores local ExternalIPAttachment
+routes and NATGateway BGP `/32` routes only after the corresponding namespace
+path and translations are verified. Conntrack state is not persisted; old
+connections must reconnect, while new connections are
 allowed only after the restored rules and routes pass health checks. A malformed
 state or failed restore keeps mutations blocked and surfaces `StateCorrupt` or
 `NetNodeRestoreFailed` rather than guessing or releasing resources.
@@ -1563,7 +1616,7 @@ existing controller/AAP boundaries:
 |---|---|---|
 | NetworkManagerUnavailable | Warning | Manager registration or capability lookup fails |
 | FabricOperationFailed | Warning | AAP create/update/delete job fails |
-| NetNodeUnavailable | Warning | Net-node reachability, state, dnsmasq, or BGP preflight fails |
+| NetNodeUnavailable | Warning | Net-node reachability, state, or dnsmasq checks fail |
 | NetNodeRestoreFailed | Warning | Namespace, DHCP, route, or translation rehydration fails |
 | VLANAllocationFailed | Warning | VLAN allocation cannot complete |
 | TransitLinkFailed | Warning | A per-VirtualNetwork transit `/30`, veth, or namespace route cannot be created or repaired |
@@ -1571,8 +1624,8 @@ existing controller/AAP boundaries:
 | ExternalIPProviderResultRejected | Warning | Provider result annotations fail UUID, generation, address, or digest validation |
 | ExternalIPCapacityReleaseBlocked | Warning | Provider or consumer cleanup has not been acknowledged by fulfillment-service |
 | DHCPLeaseUnavailable | Warning | No current lease matches the attachment |
-| ExternalRouteApplyFailed | Warning | The consumer-owned ExternalIP `/32` cannot be announced or verified with its saved next hop |
-| ExternalRouteWithdrawBlocked | Warning | A route cannot be withdrawn during consumer or ExternalIP cleanup |
+| ExternalRouteApplyFailed | Warning | The ExternalIPAttachment local FRR `/32` cannot be installed/verified or the NATGateway BGP `/32` cannot be announced/verified with its saved next hop |
+| ExternalRouteWithdrawBlocked | Warning | The ExternalIPAttachment local route or NATGateway BGP route cannot be withdrawn during consumer or ExternalIP cleanup |
 | NATSourceAddressMismatch | Warning | Egress validation does not observe the associated ExternalIP as the source address |
 | FabricCleanupBlocked | Warning | Ordered deletion cannot proceed |
 | FabricResourceReady | Normal | Desired fabric state and required feedback are ready |
@@ -1619,25 +1672,27 @@ file and records the failure in status instead of assigning a replacement IP.
 
 #### Stateful net-node failure
 
-A restart or failover can lose namespace, DHCP, conntrack, NAT, veth, or BGP
-route state. Rehydration first acquires the stable sidecar lock and validates
+A restart or failover can lose namespace, DHCP, conntrack, NAT, veth, local
+FRR route, or NATGateway BGP route state. Rehydration first acquires the stable sidecar lock and validates
 the current state or last-known-good `.bak`; malformed state blocks every
 mutation and release. It then reconciles the saved transit link, `/32` route
 ownership, and translation rules before reporting a consumer Ready. This
 milestone supports one authoritative net node and does not claim multi-node
 state replication or automatic failover. Recovery requires the state backup,
-network inventory, BGP peer configuration, and an explicit restore action when
+network inventory, NATGateway BGP peer configuration where applicable, and an explicit restore action when
 the current generation is corrupt.
 
 #### External route and source-address correctness
 
-An announced `/32` with the wrong next hop can blackhole inbound traffic, and a
-leftover MASQUERADE rule can make outbound traffic expose the node address
-instead of the tenant's ExternalIP. The design allocates one transit `/30` per
-VirtualNetwork, persists the namespace/host addresses and consumer-owned route
-identity, applies DNAT or explicit SNAT before announcing the route, verifies
-the installed route and observed source address, and withdraws the route before
-removing translation state or releasing the ExternalIP.
+For ExternalIPAttachment, the role installs the saved local FRR static
+`<address>/32 via <next-hop>` route and verifies it in the net-node RIB. Cleanup
+withdraws and verifies that local route before removing DNAT, forwarding, and
+conntrack state. The job does not query an upstream BGP peer or treat remote
+convergence as attachment readiness; provider configuration controls any
+distribution beyond the local FRR route. For NATGateway, the provider BGP
+action continues to announce and withdraw its `/32` around explicit SNAT.
+In both paths, the saved next hop scopes the route to the correct VirtualNetwork,
+and the host path must not use MASQUERADE for NATGateway traffic.
 
 #### ExternalIP reservation and handshake correctness
 
@@ -1706,16 +1761,15 @@ maintained, and lease acquisition depends on a central service. The per-VN
 namespace server avoids those additional dependencies. Central DHCP with relay
 is not supported in this milestone. [User] [Research: DHCP (RFC 2131)]
 
-#### Advertise ExternalIPs with L2/ARP instead of BGP
+#### Provide external route distribution without tenant-managed L2/ARP
 
-An L2 design could place each ExternalIP on a provider-facing interface and
-answer ARP directly, but it would require floating-address ownership,
-gratuitous-ARP/neighbour handling, and a different failover and cleanup model.
-This design selects BGP `/32` announcements because the existing AgentlessNet
-external-access path already has announce/withdraw primitives and the route can
-identify the per-VirtualNetwork namespace through its saved transit next hop.
-The provider must therefore supply a BGP session and route verification in the
-agentless inventory; this milestone does not claim an L2/ARP alternative.
+The v1 ExternalIPAttachment role installs and verifies only a local FRR static
+`/32` route; provider configuration may distribute that route to external
+networks, but the AAP job does not establish the BGP peer or verify remote
+convergence. NATGateway retains the provider's BGP `/32` announce/withdraw
+action. A tenant-managed L2/ARP design would require floating-address
+ownership, gratuitous-ARP/neighbour handling, and a different failover and
+cleanup model, so this milestone does not claim that alternative.
 
 #### Use VXLAN or QinQ instead of a flat VLAN allocation
 
@@ -1801,16 +1855,18 @@ not a substitute for that testplan.
   desired-generation freshness.
 - Validate dnsmasq range generation, gateway/reserved-address exclusions,
   lease-file parsing, daemon restart, and lease preservation across reload.
-- Verify whole-address/all-protocol DNAT, explicit `SNAT --to-source`, BGP
-  announce-after-rule ordering, and route-withdraw-before-release cleanup.
+- Verify ExternalIPAttachment whole-address DNAT and local FRR route
+  install/verify/withdraw ordering; verify NATGateway SNAT-before-BGP announce
+  and BGP-withdraw-before-release ordering.
 - Verify NATGateway source-CIDR reconciliation when a Subnet is added, updated,
   or deleted, including rule-set revision and ordering before VLAN release.
 - Inject an ExternalIP state-file write failure and verify that no partial
   `external_ips` entry is visible, retries reuse the same UUID reservation, and
   terminal failure compensates capacity only after `NOT_COMMITTED`.
-- Verify provider-result annotation validation, idempotent private provider
-  events, consumer exclusivity for Attachment versus NATGateway, field-scoped
-  status updates, and exactly-once `RELEASED` capacity accounting.
+- Verify v1 `osac_result` validation and unversioned annotation compatibility,
+  idempotent private provider events, consumer exclusivity for Attachment versus
+  NATGateway, field-scoped status updates, and exactly-once `RELEASED` capacity
+  accounting.
 - Validate attachment binding keys, host/MAC identity, direction transitions,
   provisioning-network resolution, and idempotent attach/detach state changes,
   including reboot, power-off, and
@@ -1826,10 +1882,13 @@ not a substitute for that testplan.
   annotations populate status only after a committed reservation event,
   consumers persist the transit/route state, and DNAT/SNAT actions use that
   address.
-- Exercise BGP `/32` announce/withdraw with a saved namespace-side next hop,
-  verify the provider-owned FRR/BGP peer sees the route, exercise whole-address
-  DNAT for API/ingress cluster endpoints, and verify explicit-source SNAT
-  without host-side MASQUERADE.
+- Exercise ExternalIPAttachment local FRR static `/32` install, verification,
+  and withdrawal with its saved next hop; check the local RIB and packet path
+  without requiring upstream BGP convergence.
+- Exercise NATGateway BGP `/32` announce/withdraw with its saved next hop and
+  verify the provider-owned peer sees the route. Exercise whole-address DNAT
+  for API/ingress endpoints and explicit-source SNAT without host-side
+  MASQUERADE.
 - Exercise Subnet churn while NATGateway is Ready: verify a new SNAT rule is
   installed before Subnet readiness and an old rule is removed before Subnet
   VLAN/DHCP cleanup.
@@ -1847,8 +1906,9 @@ not a substitute for that testplan.
   and reboot gates before DHCP discovery and before tenant-to-provisioning
   restoration.
 - Stop and restart the net node during Ready traffic and cleanup; verify
-  existing resources become degraded, new operations are blocked, BGP routes
-  are restored after the data path, and capacity is not released early.
+  existing resources become degraded, new operations are blocked, local
+  attachment routes and NATGateway BGP routes are restored after the data path,
+  and capacity is not released early.
 - Exercise AAP role argument validation and idempotent create/delete for the
   Cumulus support contract.
 - Verify all VLAN/IPAM writers use the shared sidecar-lock transaction and that
@@ -1867,14 +1927,16 @@ not a substitute for that testplan.
   then reboots and observes tenant DHCP before Ready, and powers it off before
   returning to the exact provisioning VLAN on offboarding, without relying on a
   Netris variable or display name.
-- Verify the upstream BGP peer learns the ExternalIP `/32`, inbound traffic
-  follows it to the VN namespace, reaches the target through whole-address
-  DNAT, and returns through conntrack.
-- Verify outbound traffic is explicitly SNATed and the external endpoint
-  observes the NATGateway ExternalIP as the source address.
+- Verify an external-client probe reaches a BareMetalInstance through the
+  saved local FRR route and whole-address DNAT, then receives its response;
+  upstream BGP convergence is not an AAP attachment-readiness check.
+- For NATGateway, verify the upstream BGP peer learns its `/32`, outbound
+  traffic is explicitly SNATed, and the external endpoint observes the
+  NATGateway ExternalIP as the source address.
 - Verify ExternalIPAttachment and Subnet/VirtualNetwork deletion order and
-  non-interference with other tenants, including route withdrawal and NAT-rule
-  removal before ExternalIP reuse.
+  non-interference with other tenants, including local FRR route withdrawal,
+  DNAT/conntrack removal, and NATGateway BGP/SNAT cleanup before ExternalIP
+  reuse.
 - Verify an ExternalIP cannot be acquired by both an ExternalIPAttachment and a
   NATGateway, and that `status.attached` remains true until consumer cleanup is
   acknowledged even when child data-plane readiness fails.
@@ -1889,9 +1951,9 @@ PRD. Graduation to a broader support stage requires:
 - all PRD acceptance criteria pass for the Cumulus reference environment;
 - no critical tenant-isolation, DNAT/SNAT-direction, or deletion-order defects;
 - BMaaS reference provisioning and DHCP status feedback pass repeatedly;
-- inbound ExternalIP traffic follows the consumer-owned BGP `/32` to the
+- inbound ExternalIP traffic follows the saved local FRR route and DNAT to the
   intended VirtualNetwork, outbound traffic observes the NATGateway ExternalIP,
-  and deletion withdraws the route before the address can be reused;
+  and cleanup removes the relevant local or BGP route before address reuse;
 - resource failure conditions identify switch, DHCP, iptables rule, allocation, and cleanup
   failures;
 - the documented Cumulus support boundary is validated in CI or a repeatable
@@ -1907,10 +1969,10 @@ versions. Existing Netris deployments remain selected by their existing
 NetworkClass and are not migrated automatically.
 
 The agentless state file uses a schema version. The design's schema 2 adds the
-per-VirtualNetwork transit link and consumer-owned external-route fields. An
-upgrade must migrate state additively before new reconciliation begins,
-preserve existing VLAN, namespace, transit, firewall, provider-side ExternalIP,
-BGP route, DNAT, and SNAT mappings, and refuse to start a destructive migration
+per-VirtualNetwork transit link and consumer route context. An upgrade must
+migrate state additively before new reconciliation begins, preserve existing
+VLAN, namespace, transit, firewall, provider-side ExternalIP, local attachment
+routes, NATGateway BGP routes, DNAT, and SNAT mappings, and refuse to start a destructive migration
 when the state cannot be parsed or a required route next hop is missing. There
 is no in-place OSAC upgrade guarantee; deployment operators must retain a
 backup of the state file, network inventory, and BGP configuration.
@@ -1942,8 +2004,9 @@ The operator, fulfillment-service, installer, and AAP collections must agree on:
 - state-file schema version;
 - state transaction protocol: stable sidecar lock, same-filesystem temporary
   file, file and parent-directory `fsync`, atomic rename, and `.bak` recovery;
-- per-VirtualNetwork transit-link fields and the BGP `/32` route prefix/next-hop
-  contract;
+- per-VirtualNetwork transit-link fields, the saved local FRR next hop for
+  ExternalIPAttachment, and the BGP `/32` prefix/next-hop contract for
+  NATGateway;
 - network-attachment binding fields, `attach`/`detach` direction semantics,
   stable provisioning-network identity, and the `port_bindings` state shape;
 - DHCP daemon (`dnsmasq`) lifecycle, per-VN config/lease paths, range and
@@ -1951,8 +2014,9 @@ The operator, fulfillment-service, installer, and AAP collections must agree on:
 - whole-address DNAT inputs and explicit-source SNAT inputs. A component that
   still sends the old single-port DNAT or MASQUERADE-only SNAT arguments must
   not report the consumer Ready.
-- ExternalIP reservation states, provider-result annotation names, private
-  provider-event values, consumer cleanup events, and the rule that only
+- ExternalIP v1 `osac_result` fields and unversioned allocated-address
+  annotation compatibility, private provider-event values, consumer cleanup
+  events, and the rule that only
   fulfillment-service releases pool capacity;
 - ExternalIP status field ownership: fulfillment-service owns `attached`, while
   the operator owns `address`, `state`, `phase`, `conditions`, and provisioning
@@ -1972,23 +2036,27 @@ Support personnel diagnose failures in this order:
 1. Inspect the resource's status conditions and provisioning job history.
 2. Confirm the NetworkClass points to a discovered IPv4-capable
    'agentless_net' ConfigMap.
-3. Check net-node reachability, state validation, namespace inventory, dnsmasq
-   services, and BGP session health before inspecting AAP jobs.
-4. Inspect AAP job status, 'leases' artifacts, provider-result annotations,
-   reservation events, dnsmasq unit/configuration and lease paths, and the
-   agentless role logs.
+3. Check net-node reachability, state validation, namespace inventory, and
+   dnsmasq services. Check BGP session health for NATGateway route operations;
+   inspect the local FRR RIB for ExternalIPAttachment route state.
+4. Inspect AAP job status, 'leases' and v1 `osac_result` artifacts, the
+   allocated-address annotation only for unversioned managers, reservation
+   events, dnsmasq unit/configuration and lease paths, and the agentless logs.
 5. Check the lock-protected state file for the resource UID, VLAN,
    gateway/DHCP, namespace, transit `/30`, veth peer addresses, provider-side
-   ExternalIP allocation, saved BGP `/32` prefix/next hop, and owned NAT/DNAT
-   rule mapping. Compare any ExternalIP address with
-   `ExternalIP.status.address`, the allocated-address annotation, provider
-   operation ID, and state digest. Confirm the fulfillment-service reservation
+   ExternalIP allocation, attachment local-route next hop, NATGateway BGP
+   `/32` prefix/next hop, and owned NAT/DNAT rule mapping. Compare any
+   ExternalIP address with
+   `ExternalIP.status.address` and provider state. Inspect the allocated-address
+   annotation only when the selected ExternalIP manager is unversioned. Confirm
+   the fulfillment-service reservation
    state and pool counters before diagnosing capacity. Also inspect the stable
    sidecar lock, schema validation result, last-known-good `.bak`, and any
    `StateCorrupt` or recovery event before attempting a repair.
 6. Verify Cumulus VLAN/trunk/access-port state and the net-node namespace,
-   interfaces, route/BGP installation or withdrawal, exact whole-address DNAT,
-   explicit `SNAT --to-source` rules, and conntrack state. Confirm that no
+   interfaces, local attachment-route and NATGateway BGP installation or
+   withdrawal, exact whole-address DNAT, explicit `SNAT --to-source` rules,
+   and conntrack state. Confirm that no
    host-side MASQUERADE rule can overwrite the NATGateway source address. For
    BMaaS, compare the binding UID, host/MAC, switch port, tenant VLAN,
    provisioning-network ID/VLAN, direction, and observed state with
@@ -2006,8 +2074,9 @@ A repeatable validation environment needs:
 
 - a Cumulus switch or equivalent validated Cumulus test target;
 - one or more network-node hosts with privileged namespace/VLAN/firewall access;
-- a provider transit-CIDR pool, a configured BGP peer, and a way to verify
-  `/32` route installation and withdrawal;
+- a provider transit-CIDR pool and local FRR access for ExternalIPAttachment
+  route install/withdraw checks;
+- a configured BGP peer and `/32` route verification for NATGateway tests;
 - AAP inventory and job templates for the generic networking playbooks;
 - dnsmasq and a service supervisor on the net node, with per-VN configuration
   and IPv4 lease storage accessible to the agentless role;
@@ -2021,11 +2090,9 @@ existing mono-repo and tests/e2e patterns.
 
 ## Provenance
 
-Authored: revise @ design 0.9.0 - 562b610, workspace main @ 0ae795e37
-Final: respond @ design 0.11.1 - f1d6a4b, workspace main @ b9575896d (dirty)
-
-> Context changed between revise and respond.
+Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
+Phases: revise, revise, revise, revise, revise, revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.1","ai_workflows":"f1d6a4b","source_repo":"b9575896d (dirty)","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise","revise","draft","respond","respond","respond","respond","manual-edit","respond","revise","respond","respond","respond"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->

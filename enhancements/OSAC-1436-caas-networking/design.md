@@ -202,7 +202,7 @@ These steps are identical to VMaaS/BMaaS — the networking API is uniform.
     - Syncs `api_endpoint` and `ingress_endpoint` from ClusterOrder status to the Cluster object
 
 10. **fulfillment-service internal reconciler** creates ExternalIPAttachments once both prerequisites are met:
-    - ExternalIP must be **Allocated** (have an allocated address from the fabric manager)
+    - ExternalIP must be **Allocated** with its address in `ExternalIP.status.address`. For ExternalIP contract v1, the operator writes this field only after validating the same-job allocation result and pool input. The manager-written annotation handoff is limited to unversioned managers and is not v1 allocation evidence. [Codebase: osac-operator/internal/controller/externalip_contract.go]
     - Cluster must be **Ready** (VIPs populated in Cluster status)
     - Creates two ExternalIPAttachments (API + ingress), each labeled `osac.openshift.io/auto-created: "true"`. Both start in **Pending** state. Creation readiness gate is satisfied because both ExternalIP (Allocated) and target Cluster (Ready) are in their terminal ready state.
 
@@ -860,8 +860,9 @@ Existing provider resources may require manual/provider-side cleanup. [User]
 
 ## Provenance
 
-Authored: respond @ design 0.11.5 - 0c7ea35, workspace osac-6307-agentlessnet-external-ip @ bb6b29932 (dirty)
+Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
+Phases: revise, revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"0c7ea35","source_repo":"bb6b29932 (dirty)","source_repo_branch":"osac-6307-agentlessnet-external-ip","commits_behind_main":0,"commits_ahead_main":14,"main_ref":"main","phases":["respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->

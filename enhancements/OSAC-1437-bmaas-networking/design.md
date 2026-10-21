@@ -295,7 +295,7 @@ Same as VMaaS/CaaS — the networking API is uniform.
     ```
     - ExternalIPAttachment controller resolves the BaremetalInstance target by UUID label
     - Checks two preconditions before dispatching (requeues if either is not met):
-      1. **ExternalIP must be Allocated** (have an allocated address from the fabric manager)
+      1. **ExternalIP must be Allocated** with its address in `ExternalIP.status.address`. For ExternalIP contract v1, the operator writes this field only after validating the same-job allocation result and pool input. The manager-written annotation handoff is limited to unversioned managers and is not v1 allocation evidence. [Codebase: osac-operator/internal/controller/externalip_contract.go]
       2. **BaremetalInstance must have a primary IP** — reads `status.networkAttachmentStatuses[].ipAddress` for the attachment where `primary: true`. This IP is written by the operator during `reconcileIPDiscovery` (step 7) and synced to the fulfillment-service via the feedback controller.
     - Once both preconditions are met: writes `osac.openshift.io/target-ip` annotation on the ExternalIPAttachment CR
     - Calls `osac.templates.{{ fabric_manager }}.create_external_ip_attachment`
@@ -1091,8 +1091,9 @@ Existing provider resources may require manual/provider-side cleanup. [User]
 
 ## Provenance
 
-Authored: respond @ design 0.11.5 - 0c7ea35, workspace osac-6307-agentlessnet-external-ip @ bb6b29932 (dirty)
+Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
+Phases: revise, revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"0c7ea35","source_repo":"bb6b29932 (dirty)","source_repo_branch":"osac-6307-agentlessnet-external-ip","commits_behind_main":0,"commits_ahead_main":14,"main_ref":"main","phases":["respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
