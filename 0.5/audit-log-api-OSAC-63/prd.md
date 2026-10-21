@@ -35,11 +35,7 @@ already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
 - Authentication events from the organization's Keycloak realm — login
 success/failure, token operations, session events — appear in the
-tenant's audit trail. Keycloak is the first external system the audit
-log must ingest from; including it in the first increment ensures the
-design accounts for event sources outside the OSAC platform's internal
-event pipeline
-from day one. [Clarify: D3]
+tenant's audit trail. [Clarify: D3]
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
 Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
