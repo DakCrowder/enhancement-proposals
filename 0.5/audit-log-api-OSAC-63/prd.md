@@ -26,11 +26,13 @@ depend on this capability.
 
 ## In Scope
 
-- Audit event capture for control-plane actions across all OSAC services
+- Audit event capture for control-plane actions across OSAC services
 (BMaaS, CaaS, VMaaS, MaaS, Enclave): resource mutations, API access to
 sensitive resources, failed authorization attempts, and administrative
 actions (organization lifecycle, role changes, IdP configuration, project
-permissions). [Clarify: D8]
+permissions). The walking skeleton captures events from services that
+already emit them; adding event emission to services that do not yet
+have it is a follow-up. [Clarify: D8]
 - Keycloak authentication event capture: login success/failure, token
 operations, session events — derived from Keycloak's native audit
 events and captured per tenant organization via the Keycloak realm.
@@ -126,9 +128,9 @@ activity. [Clarify: D3]
 - Keycloak is deployed as part of the OSAC platform and can be configured
 to make authentication events available to the audit log.
 - All OSAC services that manage tenant resources can deliver resource
-lifecycle events to the audit log. If a service does not yet deliver
-events for all its resource types, adding event delivery is part of
-this feature's scope.
+lifecycle events to the audit log. Services that do not yet emit
+events for all their resource types are covered by a follow-up
+Feature; the walking skeleton consumes what is already available.
 - All platform infrastructure involved in audit event capture, transport,
 retention, backup, replication, and failover runs within the
 deployment's sovereign jurisdiction. The audit log inherits this
