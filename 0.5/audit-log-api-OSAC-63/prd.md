@@ -32,7 +32,8 @@ sensitive resources, failed authorization attempts, and administrative
 actions (organization lifecycle, role changes, IdP configuration, project
 permissions). [Clarify: D8]
 - Keycloak authentication event capture: login success/failure, token
-operations, session events — captured per tenant organization.
+operations, session events — derived from Keycloak's native audit
+events and captured per tenant organization via the Keycloak realm.
 [Clarify: D3]
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
 Supported filters: time range, actor, action type, resource type,
