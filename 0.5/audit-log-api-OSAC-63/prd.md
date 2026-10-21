@@ -37,7 +37,8 @@ is a follow-up. [Clarify: D8]
 success/failure, token operations, session events — appear in the
 tenant's audit trail. Keycloak is the first external system the audit
 log must ingest from; including it in the first increment ensures the
-design accounts for event sources outside the OSAC fulfillment pipeline
+design accounts for event sources outside the OSAC platform's internal
+event pipeline
 from day one. [Clarify: D3]
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
 Supported filters: time range, actor, action type, resource type,
@@ -140,10 +141,10 @@ platform-wide placement guarantee.
 
 ## Dependencies
 
-- **OSAC-6154 (blocking):** Fulfillment event audit records must
-identify the user who initiated the action. Until OSAC-6154 delivers
-actor attribution for fulfillment events, those audit records cannot
-attribute actions to users. [Clarify: D2]
+- **OSAC-6154 (blocking):** Audit records for resource lifecycle
+actions must identify the user who initiated the action. Until
+OSAC-6154 delivers actor attribution for resource lifecycle events,
+those audit records cannot attribute actions to users. [Clarify: D2]
 - **OSAC-983 (satisfied):** The audit log depends on platform event
 delivery infrastructure that is already in place (OSAC-983 is Closed).
 - **Keycloak authentication events:** Authentication events (login,
