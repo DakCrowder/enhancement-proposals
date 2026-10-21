@@ -30,14 +30,14 @@ depend on this capability.
 (BMaaS, CaaS, VMaaS, MaaS, Enclave): resource mutations, API access to
 sensitive resources, failed authorization attempts, and administrative
 actions (organization lifecycle, role changes, IdP configuration, project
-permissions). The walking skeleton captures events from services that
-already emit them; adding event emission to services that do not yet
-have it is a follow-up. [Clarify: D8]
+permissions). This first increment captures events from services that
+already have audit event support; adding support to remaining services
+is a follow-up. [Clarify: D8]
 - Keycloak authentication event capture: login success/failure, token
 operations, session events — derived from Keycloak's native audit
 events and captured per tenant organization via the Keycloak realm.
 Keycloak is the first external system the audit log must ingest from;
-including it in the walking skeleton ensures the design accounts for
+including it in the first increment ensures the design accounts for
 event sources outside the OSAC fulfillment pipeline from day one.
 [Clarify: D3]
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
@@ -61,8 +61,8 @@ production-hardened. [Clarify: D1]
 ## Out of Scope
 
 - Cryptographic integrity verification (hash chains, Merkle trees) —
-follow-up Feature under the same Outcome (OSAC-3415). The walking
-skeleton provides append-only immutability; cryptographic
+follow-up Feature under the same Outcome (OSAC-3415). This first
+increment provides append-only immutability; cryptographic
 tamper-evidence is a later increment.
 - Bulk export of audit records in JSON and CSV — follow-up Feature.
 The paginated query API serves compliance workflows initially.
@@ -70,7 +70,7 @@ The paginated query API serves compliance workflows initially.
 Audit records capture the action and target resource; full state diffs
 are a later increment.
 - Configurable retention policy — follow-up Feature. Records are retained
-indefinitely in the walking skeleton; retention management (minimum
+indefinitely in this first increment; retention management (minimum
 floor, runtime adjustment) is a later increment.
 - UI and CLI for audit log browsing — API-only for this milestone.
 [Clarify: D7]
@@ -128,9 +128,10 @@ activity. [Clarify: D3]
 - Keycloak is deployed as part of the OSAC platform and can be configured
 to make authentication events available to the audit log.
 - All OSAC services that manage tenant resources can deliver resource
-lifecycle events to the audit log. Services that do not yet emit
-events for all their resource types are covered by a follow-up
-Feature; the walking skeleton consumes what is already available.
+lifecycle events to the audit log. Services that do not yet have
+audit event support for all their resource types are covered by a
+follow-up Feature; this first increment consumes what is already
+available.
 - All platform infrastructure involved in audit event capture, transport,
 retention, backup, replication, and failover runs within the
 deployment's sovereign jurisdiction. The audit log inherits this
