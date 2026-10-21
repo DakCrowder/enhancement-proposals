@@ -149,12 +149,18 @@ sequenceDiagram
     API-->>CPA: WorkloadCluster (Available=Unknown)
 
     Note over Ctrl,Hub: Controller maintains list/watch on ManagedCluster resources
-    Hub-->>Ctrl: ManagedCluster event (add/update)
-    alt ManagedCluster exists and accepted
-        Ctrl->>DB: Set Available=True, HubReachable=True, store hub_cluster_uid
-    else Not found or not accepted
-        Ctrl->>DB: Set Available=False with reason
+    Note over Ctrl: Registration-triggered reconciliation: Hub readiness gate
+    alt Hub client authenticated and informer synced
+        alt ManagedCluster exists and accepted
+            Ctrl->>DB: Set Available=True, HubReachable=True, store hub_cluster_uid
+        else Not found or not accepted
+            Ctrl->>DB: Set Available=False with reason
+        end
+    else Hub client not ready (credential failure, informer not synced)
+        Ctrl->>DB: Set HubReachable=False, Available=False (HubUnreachable)
     end
+    Hub-->>Ctrl: ManagedCluster event (add/update)
+    Ctrl->>DB: Reconcile conditions (same Hub readiness gate applies)
 
     CPA->>API: WorkloadClusters.Get(id)
     API-->>CPA: WorkloadCluster (conditions reflect current state)
@@ -173,24 +179,54 @@ reconciliation path for ongoing state changes. Three additional triggers
 ensure timely initial reconciliation and resilience:
 
 1. **Registration-triggered reconciliation.** After a successful Create
-   RPC inserts the database record, the controller immediately looks up
-   the referenced `hub_cluster_name` in the informer's current cache. If
-   the ManagedCluster already exists (the informer has already synced
-   it), the controller writes the appropriate conditions
-   (`Available=True` or `Available=False` with reason). If the
-   ManagedCluster is not in the cache, the controller sets
-   `Available=False` with reason `ManagedClusterNotFound`. This ensures
-   that a registration for an already-synced upstream name transitions
-   out of `Unknown` without waiting for a subsequent Hub event, and that
-   a registration for a nonexistent name reports `NotFound` promptly
-   rather than remaining `Unknown` indefinitely.
+   RPC inserts the database record, the controller performs a **Hub
+   readiness check** before consulting the informer cache:
 
-2. **Startup reconciliation.** On controller startup, after the
+   1. **Hub readiness gate.** The controller checks whether the Hub
+      client is authenticated and the SharedInformer has completed its
+      initial list-and-sync (i.e., `HasSynced()` returns true). If the
+      Hub client is not authenticated or the informer has not synced,
+      the controller sets `HubReachable=False` and `Available=False`
+      with reason `HubUnreachable` on the newly created record. It
+      must **not** consult the informer cache in this state — an
+      empty or unsynchronized cache would falsely report
+      `ManagedClusterNotFound` for clusters that exist on the Hub but
+      have not been cached. This gate applies identically to newly
+      created and existing records during any reconciliation path.
+
+   2. **Informer cache lookup (Hub ready only).** When the Hub client
+      is authenticated and the informer has synced, the controller
+      looks up the referenced `hub_cluster_name` in the informer's
+      current cache. If the ManagedCluster exists, the controller
+      writes the appropriate conditions (`Available=True` or
+      `Available=False` with reason). If the ManagedCluster is not in
+      the cache, the controller sets `Available=False` with reason
+      `ManagedClusterNotFound`.
+
+   This two-step ordering ensures that `ManagedClusterNotFound` is
+   reported only when the informer cache is authoritative (Hub client
+   authenticated, informer synced), and that credential or connectivity
+   failures are always surfaced as `HubUnreachable`. A registration
+   for an already-synced upstream name transitions out of `Unknown`
+   without waiting for a subsequent Hub event; a registration created
+   during a credential outage reports `HubUnreachable` promptly rather
+   than the misleading `ManagedClusterNotFound`.
+
+2. **Startup reconciliation.** On controller startup, the controller
+   reconciles all existing WorkloadCluster records in the database.
+   The same Hub readiness gate applies: if the Hub client fails
+   authentication during startup (missing or invalid credential), all
+   existing records receive `HubReachable=False` and `Available=False`
+   with reason `HubUnreachable` before any informer cache lookup is
+   attempted. When the Hub client is authenticated and the
    SharedInformer completes its initial list and cache sync, the
-   controller iterates all existing WorkloadCluster records in the
-   database and reconciles each against the current informer cache. This
-   recovers conditions after controller restarts and corrects any stale
-   condition state.
+   controller reconciles each record against the current informer
+   cache. When the credential is later corrected and the service
+   restarted, startup reconciliation runs again with a healthy Hub
+   client and synced informer, restoring accurate conditions for all
+   records. This recovers conditions after controller restarts and
+   corrects any stale condition state, including stale
+   `HubUnreachable` conditions from a prior credential outage.
 
 3. **Retry after failed status writes.** If a condition write to
    PostgreSQL fails (transient database error, connection timeout), the
@@ -609,12 +645,32 @@ authenticates to the Hub using a kubeconfig mounted from the
   contents fail authentication, the controller logs a redacted error at
   startup (no credential content in the log) and sets both
   `HubReachable=False` and `Available=False` (reason `HubUnreachable`)
-  on all WorkloadClusters. Stale `Available=True` conditions must not
-  persist when the controller cannot verify Hub state. When the
-  credential is corrected and the fulfillment-service is restarted,
-  the controller re-establishes the Hub watch and startup reconciliation
-  (§4.1) refreshes all conditions — clusters whose ManagedClusters are
-  healthy transition back to `Available=True` automatically.
+  on all existing WorkloadClusters. Stale `Available=True` conditions
+  must not persist when the controller cannot verify Hub state.
+- **Create during credential failure:** The Create RPC remains a local
+  database registration operation — it succeeds whenever local
+  validation and uniqueness checks pass, regardless of Hub client
+  state. Create does not gate on Hub reachability because registration
+  is a persistence operation, not a Hub operation. However,
+  registration-triggered reconciliation (§4.1) applies the Hub
+  readiness gate: because the Hub client is not authenticated and the
+  informer has not synced, reconciliation sets `HubReachable=False`
+  and `Available=False` with reason `HubUnreachable` on the newly
+  created record. It must **not** consult the empty/unsynchronized
+  informer cache — doing so would falsely report
+  `ManagedClusterNotFound` for clusters that exist on the Hub but
+  have not been cached. This ensures the CPA sees an honest
+  `HubUnreachable` condition, not a misleading `NotFound`.
+- **Recovery after credential fix:** When the credential is corrected
+  and the fulfillment-service is restarted, the controller
+  re-establishes the Hub watch and startup reconciliation (§4.1)
+  refreshes all conditions — both pre-existing records and records
+  created during the outage. Clusters whose ManagedClusters are
+  healthy transition from `HubUnreachable` to `Available=True`
+  automatically. Records whose `hub_cluster_name` does not match any
+  ManagedCluster transition to `Available=False` with the accurate
+  reason `ManagedClusterNotFound` (now trustworthy because the
+  informer cache is synchronized).
 - **Rotation:** Credential rotation requires updating the Secret
   contents and restarting the fulfillment-service pod (or pods, if
   scaled) to pick up the new credential. The controller does not
@@ -679,6 +735,7 @@ automatic when the underlying situation resolves.
 | ManagedCluster not accepted by Hub | `Available=False`, reason `ManagedClusterNotAccepted` | Automatic: when Hub accepts the ManagedCluster, watch event triggers update | Condition message: "Referenced managed cluster exists but is not accepted by the hub" |
 | ManagedCluster unavailable on Hub | `Available=False`, reason `ManagedClusterUnavailable` | Automatic: when `ManagedClusterConditionAvailable` becomes True, watch event triggers update | Condition message: "Referenced managed cluster is accepted but not available" |
 | Hub API unreachable | `Available=False`, `HubReachable=False`, reason `HubUnreachable` | Automatic: watch reconnects when Hub recovers; conditions update on reconnection | Condition message: "Cannot reach hub to validate cluster registration" |
+| Create during Hub credential failure | Create RPC succeeds (local validation/uniqueness only). Registration-triggered reconciliation applies Hub readiness gate: `Available=False`, `HubReachable=False`, reason `HubUnreachable`. Informer cache is **not** consulted — `ManagedClusterNotFound` is never reported in this state. | After credential fix and restart, startup reconciliation restores accurate conditions via synced informer cache | Create returns WorkloadCluster with conditions `Unknown`; reconciliation quickly sets `HubUnreachable`. After recovery, conditions reflect actual ManagedCluster state. |
 | Hub recovers after outage | `HubReachable=True`; `Available` updated based on ManagedCluster state | Automatic via watch reconnect | Conditions reflect current state |
 | ManagedCluster removed from Hub after registration | `Available=False`, reason `ManagedClusterRemoved` | CPA investigates; re-registers if the ManagedCluster returns | Condition message: "Previously validated managed cluster no longer exists on the hub" |
 | Cluster identity mismatch (UID changed) | `Available=False`, reason `ClusterIdentityMismatch` | Self-service replacement is blocked in this increment (uniqueness constraint + deferred Delete). Platform operator can soft-delete the record to release the uniqueness slot; CPA then re-registers. See §4.2 recovery path. | Condition message: "Cluster identity changed; administrative action required" |
@@ -1127,8 +1184,9 @@ hygiene action with no impact on this design.
 | U19 | Update with allowed_tenants=[] clears restrictions | FR-5 | Cluster becomes shared pool |
 | U20 | Update with allowed_tenants=["t1"] replaces entire list | FR-5 | Previous list fully replaced |
 | U21 | Registration-triggered reconciliation for existing ManagedCluster | FR-2 | Conditions transition from Unknown immediately after Create |
-| U22 | Registration-triggered reconciliation for missing ManagedCluster | FR-4 | Available=False with ManagedClusterNotFound after Create |
+| U22 | Registration-triggered reconciliation for missing ManagedCluster (Hub client ready, informer synced) | FR-4 | Available=False with ManagedClusterNotFound after Create |
 | U23 | ManagedCluster exists but ManagedClusterConditionAvailable=False | FR-4 | Available=False with ManagedClusterUnavailable |
+| U24 | Registration-triggered reconciliation when Hub client not authenticated (credential failure) | FR-4 | Hub readiness gate prevents informer cache lookup; sets HubReachable=False and Available=False with HubUnreachable — never ManagedClusterNotFound |
 
 ## 10.3 Integration Tests
 
@@ -1147,11 +1205,12 @@ hygiene action with no impact on this design.
 | I9 | Duplicate (source_hub_id, hub_cluster_name) via DB constraint | FR-4 | One succeeds, other returns AlreadyExists |
 | I10 | Placement filter: supported_workloads, Available, allowed_tenants | FR-5 | Only matching clusters returned |
 | I11 | Registration after informer sync — existing upstream name | FR-2 | Create returns; conditions transition from Unknown immediately via registration-triggered reconciliation |
-| I12 | Registration after informer sync — missing upstream name | FR-4 | Create returns; Available=False with ManagedClusterNotFound via registration-triggered reconciliation |
+| I12 | Registration after informer sync — missing upstream name (Hub ready) | FR-4 | Create returns; Available=False with ManagedClusterNotFound via registration-triggered reconciliation |
 | I13 | Startup reconciliation after controller restart | FR-2 | All WorkloadCluster conditions refreshed against informer cache |
 | I14 | Retry after failed status write | FR-4 | Condition write retried; eventually succeeds |
 | I15 | ManagedCluster accepted but ManagedClusterConditionAvailable=False | FR-4 | Available=False, reason ManagedClusterUnavailable |
 | I16 | Freshness re-validation updates last_observed_time without changing last_transition_time | — | last_observed_time updated within re-validation interval; last_transition_time unchanged when status/reason did not transition |
+| I17 | Create during Hub credential failure, then recovery | FR-4 | Create RPC succeeds; registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable), not ManagedClusterNotFound. After credential fix and restart, startup reconciliation restores accurate conditions (Available=True for existing ManagedClusters) |
 
 ## 10.4 API Tests
 
@@ -1213,6 +1272,7 @@ hygiene action with no impact on this design.
 | K1 | hub-kubeconfig Secret present and valid | — | Controller starts, watch established |
 | K2 | hub-kubeconfig Secret missing | — | Controller logs error, HubReachable=False and Available=False (reason HubUnreachable) on all clusters; recovery after credential fix and restart restores conditions via startup reconciliation |
 | K3 | hub-kubeconfig Secret with invalid credentials | — | HubReachable=False and Available=False (reason HubUnreachable) on all clusters; condition message describes auth failure without exposing credentials |
+| K4 | Create WorkloadCluster while Hub credential is invalid, then fix credential and restart | FR-4 | Create RPC succeeds (local validation only). Registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable) — informer cache not consulted, ManagedClusterNotFound never reported. After credential fix and restart, startup reconciliation transitions to accurate conditions (Available=True if ManagedCluster exists and is healthy) |
 
 ## 10.10 Direct OCM Compatibility Tests
 
@@ -1248,6 +1308,7 @@ hygiene action with no impact on this design.
 | F3 | Controller restart mid-reconciliation | FR-4 | Resumes from database state; no duplicate records |
 | F4 | Database unavailable during Create | FR-4 | Returns Internal error; no partial state |
 | F5 | Concurrent duplicate registrations (DB constraint) | FR-4 | Exactly one succeeds |
+| F6 | Create during Hub credential failure (Hub readiness gate) | FR-4 | Create succeeds locally; reconciliation sets HubUnreachable, never ManagedClusterNotFound; recovery restores accurate conditions |
 
 ## 10.14 Integration-Test Planning Evidence Matrix
 
@@ -1258,13 +1319,13 @@ real vs. simulated dependencies, and follow-up gaps.
 
 | Component | Behavior / Boundary | Required Tier | DEV/QE Owner | Case IDs / Suite Location | Command / Prerequisites | Real Dependencies | Simulated / Mocked Dependencies | Follow-up Gaps |
 |---|---|---|---|---|---|---|---|---|
-| fulfillment-service | Create RPC validation, uniqueness, immutability | Unit | [DEV] | U1–U12, U15–U23 / `fulfillment-service/internal/servers/` (Ginkgo) | `make -C fulfillment-service test-unit` | None | DAO mocked; Hub client mocked | — |
+| fulfillment-service | Create RPC validation, uniqueness, immutability, Hub readiness gate | Unit | [DEV] | U1–U12, U15–U24 / `fulfillment-service/internal/servers/` (Ginkgo) | `make -C fulfillment-service test-unit` | None | DAO mocked; Hub client mocked | U24 verifies Hub readiness gate in registration-triggered reconciliation |
 | fulfillment-service | Registration-triggered reconciliation, informer lookup | Unit | [DEV] | U21–U23 / `fulfillment-service/internal/controllers/` (Ginkgo) | `make -C fulfillment-service test-unit` | None | Informer cache stubbed; DB mocked | Real informer behavior tested at component-integration tier |
 | fulfillment-service | Controller watch, condition transitions, startup reconciliation | Component integration | [DEV] | I1–I15 / `fulfillment-service/it/` | `make -C fulfillment-service test-integration` (requires PostgreSQL testcontainer) | PostgreSQL (testcontainer) | **Hub API is mocked** (fake ManagedCluster resources injected into a fake informer or test API server). This exercises the controller's client-side handling but does not prove compatibility with a real ACM Hub API. | Real ACM Hub compatibility: deferred to E2E with live Hub (E1–E6). No envtest suite exists for the controller; proposed. |
 | fulfillment-service | DB uniqueness constraint under concurrency | Component integration | [DEV] | I9 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub mocked | — |
 | fulfillment-service | Placement filter query (List with CEL) | Component integration | [DEV] | I10 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub mocked; no actual Praxis consumer | Actual Praxis placement consumer: deferred to Praxis integration follow-up |
 | fulfillment-service | OPA authorization (CPA-only) | Component integration | [DEV] | S1–S7 / `fulfillment-service/it/` | Same as above | PostgreSQL, OPA policy (testcontainer or embedded) | Hub mocked | — |
-| fulfillment-service | Credential lifecycle (missing/invalid Secret) | Component integration | [DEV] | K1–K3 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub client configured with invalid credentials or missing mount | Real Secret mount behavior tested in E2E |
+| fulfillment-service | Credential lifecycle (missing/invalid Secret, Create during outage) | Component integration | [DEV] | K1–K4, I17 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub client configured with invalid credentials or missing mount | Real Secret mount behavior tested in E2E. K4 verifies Hub readiness gate prevents ManagedClusterNotFound during credential outage. I17 verifies end-to-end Create-during-outage and recovery via startup reconciliation. |
 | fulfillment-service | Logging redaction | Unit + component integration | [DEV] | L1–L3 / `fulfillment-service/internal/` + `it/` | `make -C fulfillment-service test-unit test-integration` | None (unit); PostgreSQL (integration) | Hub mocked | — |
 | fulfillment-service | Freshness re-validation and staleness | Component integration | [DEV] | I16 / `fulfillment-service/it/` | Same as integration command | PostgreSQL (testcontainer) | Hub mocked; clock stubbed for staleness window | Staleness threshold interaction with Praxis: deferred to follow-up |
 | tests/e2e | Register, verify, CPA-only access, duplicate detection | E2E | [QE] | E1–E8 / `tests/e2e/` (pytest via osac-test-infra) | `pytest tests/e2e/test_workload_cluster.py` (proposed; requires deployed OSAC + live ACM Hub) | Deployed OSAC stack, PostgreSQL, live ACM Hub with ManagedCluster | None — all dependencies real | ACM Hub availability in CI: unresolved — requires dedicated test Hub or integration with existing ACM test environment. No existing test Hub is provisioned in CI. |
@@ -1273,7 +1334,7 @@ real vs. simulated dependencies, and follow-up gaps.
 
 **Limitations and honest disclosures:**
 
-- **Mocked Hub limitation:** Component-integration tests (I1–I15) use a
+- **Mocked Hub limitation:** Component-integration tests (I1–I17) use a
   mocked or fake Hub API. This exercises the controller's client-side
   handling of ManagedCluster events but does not prove wire
   compatibility with a real ACM Hub — specifically, it does not test
@@ -1364,8 +1425,14 @@ is handled via API versioning (the `v1` API is additive-only).
   `osac_workload_cluster_hub_watch_errors_total` metric.
 - Clusters with `Available=False`: inspect the `Available` condition's
   `reason` and `message`. Common causes: `ManagedClusterNotFound` (wrong
-  name), `HubUnreachable` (connectivity), `ManagedClusterNotAccepted`
-  (Hub-side acceptance).
+  name — only reported when Hub client is authenticated and informer is
+  synced), `HubUnreachable` (connectivity or credential failure),
+  `ManagedClusterNotAccepted` (Hub-side acceptance).
+- Clusters created during a credential outage show `HubUnreachable`:
+  this is expected — the Hub readiness gate prevents misleading
+  `ManagedClusterNotFound` when the informer cache is not synchronized.
+  Fix the credential, restart the fulfillment-service, and startup
+  reconciliation restores accurate conditions automatically.
 - Hub watch errors increasing: check
   `osac_workload_cluster_hub_watch_errors_total`. May indicate Hub
   credential rotation needed or network issue.
@@ -1471,7 +1538,9 @@ Revised: revise @ design 0.9.0 - 155e7d6, workspace design/OSAC-6488 @ a74d9f5
 Reviewed: respond @ design/OSAC-6488 — trusted corrections (eranco74) and CodeRabbit findings
 Reviewed: independent review @ design/OSAC-6488 — evidence matrix case-ID corrections (I1–I15, I16), all eranco74 baselines preserved, all CodeRabbit findings verified addressed
 Reviewed: respond @ design/OSAC-6488 — five CodeRabbit consistency findings: U7 single-Hub validation, credential failure clears Available, UID replacement recovery path, freshness last_observed_time, Delete authorization/dispatch alignment
-Phases: draft, revise, revise, respond, respond, respond, respond
+Reviewed: respond @ design/OSAC-6488 — CodeRabbit finding: Create behavior during Hub credential failure. Defined Hub readiness/authentication gate in registration-triggered reconciliation (§4.1), credential lifecycle (§4.5), failure table (§4.6), support procedures (§14). Added tests U24, I17, K4, F6. Qualified U22/I12 to Hub-ready state. Asynchronous registration baseline preserved: Create remains a local persistence operation; Hub readiness gate is a reconciliation concern, not a Create gate.
+Reviewed: independent review @ design/OSAC-6488 — credential-outage revision: verified Hub readiness gate coherence (no invented API; HasSynced is real, authentication is controller-owned state). Fixed startup reconciliation §4.1 sequencing contradiction (opening clause assumed informer sync before describing auth-failure path). Reordered I17 to sequential position after I16. Added I17 to evidence-matrix credential-lifecycle row and mocked-Hub limitation range (I1–I17). All baselines and prior corrections preserved.
+Phases: draft, revise, revise, respond, respond, respond, respond, respond, respond
 Sources: PRD (prd.md), PR #394 review feedback (eranco74 trusted corrections, CodeRabbit inline findings), baselined architectural decisions, INTEGRATION-TESTING.md planning evidence requirements, OSAC source storage shape verification
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"a74d9f5","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"a74d9f5","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
