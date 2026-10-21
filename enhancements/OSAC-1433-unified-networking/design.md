@@ -1291,6 +1291,15 @@ canonical IPv4 values before dispatch. The job keeps the attachment CR in
 | `subnet` | Fulfillment ID, Kubernetes UID, tenant ID, IPv4 CIDR, parent VirtualNetwork Fulfillment ID, `phase: Ready` |
 | `virtual_network` | Fulfillment ID, Kubernetes UID, tenant ID, `phase: Ready` |
 
+The `external_ip.address` value comes from the current
+`ExternalIP.status.address`; the attachment controller does not read the
+allocated-address annotation. ExternalIP contract v1 writes status only after
+validating its same-job result and pool input. Managers that remain on the
+unversioned ExternalIP contract retain the legacy annotation handoff, which
+their ExternalIP controller consumes before updating status. [Codebase:
+`osac-operator/internal/controller/externalip_contract.go`,
+`osac-operator/internal/controller/externalipattachment_contract.go`]
+
 The snapshot is job input, not annotation state. AAP consumes the caller's
 snapshot, reads and updates only its provider-owned state, and does not query
 Kubernetes or patch OSAC annotations or status. AgentlessNet v1 supports the
@@ -1891,7 +1900,7 @@ response but does not prove upstream BGP advertisement.
 
 | Case | Requirement | Scenario and assertion | Tier / owner | Suite, command, and boundary |
 |---|---|---|---|---|
-| TC-EIA-V1-01 | FR-5, FR-9 | Resolve exactly one current ExternalIP, ready BMI primary address, Ready Subnet, and Ready parent VirtualNetwork; reject identity, tenant, relationship, or IPv4 mismatches before dispatch. | Unit / `[DEV]` OSAC-6308 | `osac-operator/internal/controller/externalipattachment_contract_unit_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes resources are fixtures. |
+| TC-EIA-V1-01 | FR-5, FR-9 | Resolve exactly one current ExternalIP and use its allocated `status.address`, ready BMI primary address, Ready Subnet, and Ready parent VirtualNetwork; reject identity, tenant, relationship, or IPv4 mismatches before dispatch. | Unit / `[DEV]` OSAC-6308 | `osac-operator/internal/controller/externalipattachment_contract_unit_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes resources are fixtures. |
 | TC-EIA-V1-02 | FR-5, FR-9 | Submit the typed dependency snapshot in the same job input as the attachment CR; verify AAP makes no Kubernetes query or CR write and emits attach/detach artifacts only after provider work. | Component integration / `[DEV]` OSAC-6308 | From `osac-aap/tests/integration/`, run `uv run ansible-playbook targets/agentless_net_external_ip_attachment/tasks/baseline.yml -e @common_vars.yml`. It uses the production playbooks and SQLite with test-only provider-command mocks. |
 | TC-EIA-V1-03 | FR-5, FR-9 | Accept Ready only for matching v1 operation, UID, generation, same-job input, and current dependency snapshot; invalid or stale results keep Ready false. | Envtest / `[DEV]` OSAC-6308 | `osac-operator/internal/controller/externalipattachment_contract_unit_test.go` and controller tests; from the osac root, `make -C osac-operator test`. The API server is envtest and AAP is fixture-driven. |
 | TC-EIA-V1-04 | FR-9, FR-10 | Detach from saved provider state; retain finalizers and the ExternalIP consumer reservation when the detach job or result is invalid. | Unit and component integration / `[DEV]` OSAC-6308 | Operator controller tests plus the AgentlessNet attachment target above. Provider commands are fixture-driven. |
@@ -1987,8 +1996,8 @@ No additional infrastructure beyond existing OSAC components and managers.
 ## Provenance
 
 Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
-Phases: revise, revise, revise
+Phases: revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->

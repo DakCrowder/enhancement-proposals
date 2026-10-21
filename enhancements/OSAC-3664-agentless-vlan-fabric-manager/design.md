@@ -109,9 +109,12 @@ checks, and observed status. AgentlessNet owns provider-side pool and
 ExternalIP address allocation in its locked state file, as well as
 VirtualNetwork/Subnet realization, per-VirtualNetwork transit links, BGP `/32`
 reachability, the permit-all forwarding baseline, BMF port binding, DNAT, and
-SNAT. It writes provider-result annotations after state-file commits; the
-operator exposes a validated address as `ExternalIP.status.address`. [PRD:
-FR-1, FR-2]
+SNAT. For ExternalIP contract v1, AAP returns the provider result in the same-job
+`osac_result` artifact; the operator validates it against the submitted
+ExternalIP and pool inputs before exposing the address as
+`ExternalIP.status.address`. Managers that remain unversioned retain the legacy
+annotation handoff. [Codebase: osac-operator/internal/controller/externalip_contract.go;
+PRD: FR-1, FR-2]
 
 The flow below shows the ownership boundary. The operator selects the
 implementation strategy and starts generic AAP jobs; the agentless template
@@ -328,12 +331,18 @@ service-specific input contracts are not expanded here. [Locked: D1, D2]
    fails. The agentless `create_external_ip` AAP job reads the pool entry from
    the locked state file, reuses an existing allocation for the ExternalIP UID
    when retrying, or selects and persists the first available IPv4 address.
-   After the provider entry commits, the role patches the allocated-address and
-   provider-result annotations together on the ExternalIP CR and fails the AAP
-   job if that patch is rejected. The operator validates those annotations,
-   records the `COMMITTED` provider event in fulfillment-service, and only then
-   writes the address to `ExternalIP.status.address` and marks the ExternalIP
-   ALLOCATED. Allocation alone still has no data-plane route or NAT rule.
+   For `externalIPContractVersion: v1`, AAP returns
+   `osac_result.data.address` in the same job and does not patch the ExternalIP
+   CR. The operator accepts only a successful current job whose ExternalIP UID,
+   generation, operation, and submitted pool snapshot match the current
+   ExternalIP and pool. It validates the address against the pool before
+   recording the `COMMITTED` provider event in fulfillment-service and writing
+   `ExternalIP.status.address`. Managers that remain on the unversioned
+   contract retain the allocated-address and provider-result annotation
+   handoff; annotation-only evidence is not accepted for v1. Allocation alone
+   still has no data-plane route or NAT rule. [Codebase:
+   osac-operator/internal/controller/externalip_contract.go;
+   osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net/tasks/_external_ip.yaml]
    `ExternalIP` readiness means that a concrete address is allocated; it does
    not mean that inbound traffic is usable. Inbound readiness is represented by
    the separate ExternalIPAttachment resource.
@@ -548,12 +557,15 @@ No new public gRPC service, REST resource, protobuf field, CRD kind, or webhook
 is introduced. Existing fabric-facing resources receive the agentless backend.
 The fulfillment-service adds an internal, non-tenant reservation record and a
 private provider-result operation; neither is exposed through the public API or
-REST surface. Agentless AAP roles allocate provider-side pool addresses and
-write the established `osac.openshift.io/allocated-address` annotation plus a
-validated provider-result annotation. ExternalIPAttachment and NATGateway use
-the resulting `ExternalIP.status.address` for DNAT/SNAT. Existing status and
-condition fields carry observed readiness and diagnostic failures. [Locked: D3,
-D5, D9]
+REST surface. Agentless AAP roles allocate provider-side pool addresses. Under
+ExternalIP contract v1 they return a same-job `osac_result`; the operator
+validates it before writing `ExternalIP.status.address`. The legacy
+`osac.openshift.io/allocated-address` and provider-result annotation handoff
+remains for managers using the unversioned contract. ExternalIPAttachment and
+NATGateway consume `ExternalIP.status.address` for DNAT/SNAT. Existing status
+and condition fields carry observed readiness and diagnostic failures. [Locked:
+D3, D5, D9; Codebase:
+osac-operator/internal/controller/externalip_contract.go]
 
 The implementation changes the following existing surfaces:
 
@@ -2033,8 +2045,8 @@ existing mono-repo and tests/e2e patterns.
 ## Provenance
 
 Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
-Phases: revise, revise, revise
+Phases: revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
