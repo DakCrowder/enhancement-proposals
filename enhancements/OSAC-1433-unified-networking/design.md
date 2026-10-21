@@ -1996,8 +1996,8 @@ No additional infrastructure beyond existing OSAC components and managers.
 ## Provenance
 
 Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
-Phases: revise, revise, revise, revise
+Phases: revise, revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
