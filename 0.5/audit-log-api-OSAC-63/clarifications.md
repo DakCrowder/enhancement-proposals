@@ -8,25 +8,25 @@
 
 ## Round 1 — Scope and Phasing
 
-### R1.Q1: 0.4 Dev Preview MVP boundary
+### R1.Q1: 0.5 Dev Preview MVP boundary
 
 The Definition of Done covers all resource types, Keycloak authentication
 events, before/after state capture, sovereign data residency controls,
 cross-tenant operator queries, cryptographic integrity, and E2E tests.
-That is a very broad scope for a Dev Preview milestone (fix version 0.4,
-release date 2026-10-30). What is the MVP subset for 0.4, and what gets
+That is a very broad scope for a Dev Preview milestone (fix version 0.5,
+release date 2026-10-30). What is the MVP subset for 0.5, and what gets
 deferred to later milestones?
 
 #### Answer
 
-All DoD items are in scope for 0.4. "Dev Preview" means the feature is
+All DoD items are in scope for 0.5. "Dev Preview" means the feature is
 functional but not production-hardened — e.g., retention policy is
 configurable but not yet tested at scale, crypto integrity is implemented
 but not yet independently audited.
 
 #### Impact
 
-The PRD will declare all DoD items as in-scope for 0.4 and describe the
+The PRD will declare all DoD items as in-scope for 0.5 and describe the
 Dev Preview maturity level. No phased delivery — all capabilities ship
 together. The PRD should note that production hardening (scale testing,
 independent audit of crypto integrity, retention policy stress testing)
@@ -34,7 +34,7 @@ is a follow-up for a later milestone.
 
 #### Decision (D1)
 
-The 0.4 Dev Preview milestone delivers the walking skeleton: audit
+The 0.5 Dev Preview milestone delivers the walking skeleton: audit
 event capture, query, and API-level append-only immutability.
 Cryptographic integrity, bulk export, before/after state, and
 configurable retention are deferred to follow-up Features (see D4, D5,
@@ -47,7 +47,7 @@ D10, R2.Q3). Dev Preview means functional but not production-hardened.
 OSAC-6154 (Add actor attribution to Fulfillment Events) is currently in
 New status. Without it, audit records cannot identify who performed an
 action — only what happened and when. Is actor attribution a hard
-prerequisite for the 0.4 audit log delivery, or can the audit log
+prerequisite for the 0.5 audit log delivery, or can the audit log
 launch without "who" attribution?
 
 #### Answer
@@ -67,17 +67,17 @@ prerequisite for the audit log. The feature will not ship without it.
 
 ---
 
-### R1.Q3: Keycloak authentication event capture for 0.4
+### R1.Q3: Keycloak authentication event capture for 0.5
 
 The user story "Authentication events" calls for capturing Keycloak
 login attempts, token issuance, and session events. This requires
 Keycloak integration (webhook or event listener) separate from the
 fulfillment event pipeline. Is Keycloak audit event capture in scope
-for 0.4?
+for 0.5?
 
 #### Answer
 
-Yes, in scope for 0.4.
+Yes, in scope for 0.5.
 
 #### Impact
 
@@ -90,7 +90,7 @@ the audit log alongside fulfillment events.
 #### Decision (D3)
 
 Keycloak authentication event capture (login success/failure, token
-operations, session events) is in scope for 0.4.
+operations, session events) is in scope for 0.5.
 
 ---
 
@@ -99,12 +99,12 @@ operations, session events) is in scope for 0.4.
 The DoD includes "Before/after state capture for configuration changes."
 Capturing the full before/after state of every resource mutation could
 produce very large payloads (e.g., a cluster order spec change). Is
-before/after state capture in scope for 0.4, and is it limited to
+before/after state capture in scope for 0.5, and is it limited to
 specific resource types?
 
 #### Answer
 
-Full before/after capture for all resource mutations in 0.4.
+Full before/after capture for all resource mutations in 0.5.
 
 #### Impact
 
@@ -116,7 +116,7 @@ implications).
 #### Decision (D4)
 
 ~~Full before/after state capture for all resource mutations is in
-scope for 0.4.~~ Revised after EP review: deferred to a follow-up
+scope for 0.5.~~ Revised after EP review: deferred to a follow-up
 Feature. The walking skeleton captures the action and target resource
 without full state diffs.
 
@@ -165,7 +165,7 @@ personas can query audit logs?
 
 Cloud Provider Admin (cross-tenant audit queries) and Tenant Admin
 (tenant-scoped audit queries). Cloud Infrastructure Admin and Tenant
-User are excluded from audit log access in 0.4.
+User are excluded from audit log access in 0.5.
 
 #### Impact
 
@@ -186,21 +186,21 @@ Cloud Infrastructure Admin and Tenant User are excluded.
 
 The Feature explicitly puts UI out of scope ("API-first"). The OSAC CLI
 is a primary interface for many personas. Should the PRD include CLI
-commands for querying audit logs, or is this API-only for 0.4?
+commands for querying audit logs, or is this API-only for 0.5?
 
 #### Answer
 
-API-only for 0.4. CLI access is deferred to a later milestone.
+API-only for 0.5. CLI access is deferred to a later milestone.
 
 #### Impact
 
 The PRD will specify that audit log queries are available via the
-gRPC/HTTP API only. CLI commands are out of scope for 0.4. UI was
+gRPC/HTTP API only. CLI commands are out of scope for 0.5. UI was
 already declared out of scope in the Feature issue.
 
 #### Decision (D7)
 
-Audit log query is API-only for 0.4. CLI and UI are deferred.
+Audit log query is API-only for 0.5. CLI and UI are deferred.
 
 ---
 
@@ -218,7 +218,7 @@ serves compliance workflows initially.
 
 #### Impact
 
-Bulk export is out of scope for 0.4. The paginated query API provides
+Bulk export is out of scope for 0.5. The paginated query API provides
 initial compliance reporting capability.
 
 ---
@@ -228,7 +228,7 @@ initial compliance reporting capability.
 OSAC has multiple services: BMaaS, CaaS, VMaaS, MaaS, Enclave. The
 Feature lists resource types across compute, networking, storage,
 identity, and secrets. Are all services in scope for audit event
-capture in 0.4?
+capture in 0.5?
 
 #### Answer
 
@@ -245,7 +245,7 @@ or alternative capture mechanisms.
 #### Decision (D8)
 
 All OSAC services (BMaaS, CaaS, VMaaS, MaaS, Enclave) are in scope
-for audit event capture in 0.4.
+for audit event capture in 0.5.
 
 ---
 
@@ -282,19 +282,19 @@ modes. Both modes are subject to audit-of-audit logging.
 
 The audit log will capture events from all services, all resource
 mutations, plus Keycloak auth events. Are there query latency SLOs or
-event ingestion lag targets for 0.4?
+event ingestion lag targets for 0.5?
 
 #### Answer
 
 Dev Preview — defer SLOs to a later milestone. Functional correctness
-is the bar for 0.4.
+is the bar for 0.5.
 
 #### Impact
 
 The PRD will note that performance SLOs (query latency, ingestion
 lag, throughput) are deferred to a post-Dev-Preview milestone.
 Functional correctness and completeness are the acceptance criteria
-for 0.4. The PRD should state this explicitly so the design is not
+for 0.5. The PRD should state this explicitly so the design is not
 over-constrained.
 
 ---
@@ -352,7 +352,7 @@ future enhancement.
 
 Audit data residency is automatic — audit data is co-located with
 the platform deployment and inherits its jurisdiction. No separate
-storage configuration for 0.4.
+storage configuration for 0.5.
 
 ---
 

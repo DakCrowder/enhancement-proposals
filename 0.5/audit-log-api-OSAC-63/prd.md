@@ -47,7 +47,7 @@ covers storage-level integrity is deferred (see Out of Scope).
 itself recorded. [Clarify: D9]
 - Data residency: audit data is co-located with the platform deployment,
 inheriting the deployment's sovereign jurisdiction. [Clarify: D11]
-- Target milestone: 0.4 (Dev Preview) — functional but not
+- Target milestone: 0.5 (Dev Preview) — functional but not
 production-hardened. [Clarify: D1]
 
 
@@ -79,7 +79,7 @@ provides the technical controls; certification is an organizational
 process.
 - Performance SLOs (query latency, ingestion lag, throughput) — deferred
 to a post-Dev-Preview milestone. Functional correctness is the bar for
-0.4. [Clarify: R3.Q1]
+0.5. [Clarify: R3.Q1]
 
 
 
