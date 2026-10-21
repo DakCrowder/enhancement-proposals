@@ -632,15 +632,15 @@ digest is an aborted conflict. Only the operator calls this private operation
 after validating the AAP result. [Codebase:
 fulfillment-service/proto/private/osac/private/v1/external_ips_service.proto]
 
-The provider-result annotations are part of the internal controller contract:
-`osac.openshift.io/allocated-address` carries the committed address,
-`osac.openshift.io/external-ip-provider-event` carries the event,
-`osac.openshift.io/external-ip-provider-operation` carries the AAP operation
-identity, and `osac.openshift.io/external-ip-provider-digest` carries the
-state-file evidence. The ExternalIP reconciler accepts a successful AAP job
-only after these values match the current UUID and desired generation. A
-missing, malformed, stale, or pool-out-of-range result remains retryable and
-does not mark the provisioning version successful.
+For unversioned ExternalIP managers, the
+`osac.openshift.io/allocated-address` annotation is the legacy address
+handoff. Under `externalIPContractVersion: v1`, AAP returns the allocation in
+the same-job `osac_result`. The operator validates its schema, operation,
+resource UID, generation, submitted job inputs, and current pool before writing
+`ExternalIP.status.address`. V1 does not require or consult the allocated-
+address annotation. [Codebase:
+osac-operator/internal/controller/externalip_contract.go;
+osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net/tasks/_external_ip.yaml]
 
 #### NetworkAPI resource CRs and implementation points
 
@@ -828,11 +828,14 @@ with conflict retries and never replaces a stale full status.
 
 The fulfillment-service validates the pool and owns the durable capacity
 reservation, but the agentless AAP job selects the concrete address from the
-provider state file. The role writes the established allocated-address
-annotation and a provider-result annotation. The operator validates the result,
-records the private provider event, and publishes the address in
-`status.address` only after the service acknowledges `COMMITTED`. Allocation
-alone creates no traffic rule; the address is consumed later by an
+provider state file. For ExternalIP contract v1, the role commits provider
+state and returns `osac_result.data.address` without patching the ExternalIP
+CR. The operator validates that result against the successful job's submitted
+ExternalIP and pool inputs, records the private provider event, and publishes
+the address in `ExternalIP.status.address` only after the service acknowledges
+`COMMITTED`. Only managers using the unversioned contract retain the
+allocated-address/provider-result annotation handoff. Allocation alone
+creates no traffic rule; the address is consumed later by an
 ExternalIPAttachment or a NATGateway, subject to the durable consumer
 reservation.
 
@@ -1204,7 +1207,7 @@ in the unified state file. [Codebase: osac-aap/collections/ansible_collections/a
 | VirtualNetwork create/update/delete | Add or reconcile one `virtual_networks` entry, including its transit `/30`, veth identities, and external-reachability mode; remove it only when the VirtualNetwork object is deleted and its child entries are gone | Allocate or reuse the transit link; create or repair the namespace, uplink, default route, and permit-all baseline; remove the link during ordered cleanup |
 | Subnet create/update/delete | Add or reuse one `subnets` entry with VLAN interface, gateway, DHCP range, exclusions, and state generation; remove it and release the VLAN only when the Subnet object is deleted and dependent bindings are gone | Create or repair the switch VLAN, namespace interface, gateway, dnsmasq range, and lease mapping; reload the per-VN daemon; reconcile any active NATGateway `source_cidrs`; no host access-port binding during Subnet provisioning |
 | ExternalIPPool create/delete | Add or reconcile one `external_ip_pools` entry; remove it only when the ExternalIPPool object is deleted | Register or remove provider-side pool CIDRs under the state-file lock; fulfillment-service remains authoritative for capacity counters |
-| ExternalIP create/delete | Create or reuse one fulfillment-service reservation keyed by ExternalIP UUID; add or reuse one complete `external_ips` provider entry keyed by the same UUID; accept provider and consumer cleanup events; release capacity only in the service's idempotent `RELEASED` transaction | Select and persist a complete IPv4 allocation atomically under the state-file lock, patch the provider-result annotations, and remove provider state before the service acknowledges capacity release |
+| ExternalIP create/delete | Create or reuse one fulfillment-service reservation keyed by ExternalIP UUID; add or reuse one complete `external_ips` provider entry keyed by the same UUID; accept provider and consumer cleanup events; release capacity only in the service's idempotent `RELEASED` transaction | Select and persist a complete IPv4 allocation atomically under the state-file lock; for v1, return `osac_result.data.address` without patching the CR; keep the annotation handoff only for unversioned managers; remove provider state before the service acknowledges capacity release |
 | ExternalIPAttachment create/delete | Atomically reserve the ExternalIP consumer in fulfillment-service; add, replace, or remove one `attachments` entry containing validated context and saved provider identity/next hop; retain the reservation through cleanup | Read the address from `ExternalIP.status.address` and target status, create the all-protocol DNAT rule, install/verify or withdraw/verify the saved local FRR `/32`, then report consumer cleanup to the service |
 | NATGateway create/delete | Atomically reserve the ExternalIP consumer in fulfillment-service; add or remove one `nat_gateways` entry containing all current source CIDRs, explicit SNAT address, `/32` route, saved next hop, and route-announced state; retain the reservation through cleanup | Read the address from `ExternalIP.status.address`, create explicit `SNAT --to-source` rules, announce or withdraw the owned BGP `/32`, then report consumer cleanup to the service |
 | BMF attachment bind/unbind | Add or reconcile one `port_bindings` entry keyed by binding UID, host/interface/MAC, Subnet, tenant VLAN, and provisioning-network identity | For attach, reset-plus-set the access port to the resolved Subnet VLAN; for detach, reset-plus-set it back to the saved provisioning VLAN and remove state only after verification |
@@ -1311,11 +1314,13 @@ model and AAP action contract. [PRD: FR-3, FR-5, FR-6] [User]
 ExternalIPPool API objects, aggregate capacity counters, and the durable
 ExternalIP-UID reservation remain fulfillment-service state. AgentlessNet
 maintains provider-side pool and concrete ExternalIP allocation entries in its
-locked state file. The AAP allocation role first commits the complete
-`external_ips` entry, then patches the provider-result annotations. The
-operator validates the current UUID, generation, pool membership, address, and
-state digest before recording `COMMITTED` in fulfillment-service and copying
-the address to `ExternalIP.status.address`.
+locked state file. For ExternalIP contract v1, the AAP allocation role commits
+the complete `external_ips` entry and returns `osac_result.data.address`
+without patching the ExternalIP CR. The operator validates the successful
+job result against the submitted ExternalIP and pool snapshots, then records
+`COMMITTED` in fulfillment-service and copies the address to
+`ExternalIP.status.address`. Only unversioned managers retain the legacy
+allocated-address annotation handoff.
 
 The reservation state machine is:
 
@@ -1372,10 +1377,11 @@ The agentless implementation must provide:
   ExternalIPPool, ExternalIP, ExternalIPAttachment, and NATGateway.
   fulfillment-service owns ExternalIPPool/API validation and
   capacity and consumer reservations; the ExternalIPPool and ExternalIP roles
-  register CIDRs, allocate concrete addresses in the locked state file, and
-  patch the allocated-address and provider-result annotations. Attachment and
-  NAT roles consume the resulting `ExternalIP.status.address` when programming
-  whole-address DNAT or explicit-source SNAT. The VirtualNetwork entrypoint
+  register CIDRs and allocate concrete addresses in the locked state file.
+  ExternalIP v1 returns a same-job artifact and does not patch the CR; the
+  legacy allocated-address annotation handoff is limited to unversioned
+  managers. Attachment and NAT roles consume `ExternalIP.status.address` when
+  programming whole-address DNAT or explicit-source SNAT. The VirtualNetwork entrypoint
   allocates and repairs the per-VirtualNetwork transit `/30` and veth pair.
 - Generic network attachment entrypoints for create/delete or equivalent
   attach/detach operations. The generic playbook passes a stable binding UID,
@@ -1400,9 +1406,11 @@ current Subnet name or a Netris variable. It passes the stable provisioning
 network ID on both directions, and AgentlessNet resolves that ID to a VLAN from
 provider configuration before performing reset-plus-set and verification.
 
-The ExternalIP operator must validate provider-result annotations before treating
-an AAP success as a successful reconciliation. The shared provisioning
-lifecycle therefore needs a pre-success validation callback (or equivalent
+The ExternalIP operator must validate the v1 `osac_result` against the current
+successful job and submitted pool input before treating AAP success as a
+successful reconciliation. The legacy allocated-address annotation is
+consumed only for unversioned managers. The shared provisioning lifecycle
+therefore needs a pre-success validation callback (or equivalent
 ExternalIP-specific gate) that runs before recording the successful config
 version. A malformed or missing result remains retryable; it must not be
 converted into `ALLOCATED` with an empty address.
@@ -1509,7 +1517,7 @@ default-deny readiness gate or claim an in-use SecurityGroup deletion protocol.
 | Net-node restore cannot rehydrate namespaces, DHCP, local attachment routes, or translations | Keep mutations and releases blocked; restore from the validated backup or surface the exact failed phase | `NetNodeRestoreFailed` condition identifies the phase; attachments remain non-ready and NATGateway route changes are not reported successful |
 | VLAN allocation exhausted or already owned | Do not reuse an allocated ID; fail the requested generation | Failed condition identifies VLAN allocation exhaustion/conflict |
 | ExternalIP state sidecar lock unavailable or pool has no free address | Retry without changing an existing `HELD` reservation; do not publish an address or bypass the shared lock | ExternalIP remains non-ready with an allocation diagnostic and capacity remains held once |
-| ExternalIP provider-result annotation is missing, stale, malformed, or out of pool | Reject the result before `ALLOCATED`; retain the same reservation and retry the current generation; do not record a successful config version | ExternalIP remains Pending/Progressing with a provider-result condition |
+| ExternalIP v1 result artifact is missing, stale, malformed, mismatched, or out of pool; or an unversioned annotation handoff is invalid | Reject the result before `ALLOCATED`; retain the same reservation and retry the current generation; do not record a successful config version | ExternalIP remains Pending/Progressing with a provider-result condition |
 | ExternalIP allocation fails before atomic provider-state commit | Require a provider `NOT_COMMITTED` result or an inspect job before compensation; retain capacity while retryable and release it exactly once only after terminal failure/deletion | ExternalIP remains non-ready during retry; capacity is restored only after authoritative compensation |
 | ExternalIP deletion races allocation or provider cleanup | Serialize by ExternalIP UUID; keep `release_requested` and the finalizer until `NOT_COMMITTED` or `CLEANUP_COMPLETE` is acknowledged by fulfillment-service | No address becomes reusable until provider state, consumer state, and API reservation agree |
 | Switch VLAN or access-port operation fails | Retry the same binding UID with the saved host/MAC, switch port, tenant VLAN, and provisioning VLAN; do not release or forget the binding on partial failure | AAP failure and resource status contain switch error; the port remains in the last verified state |
@@ -1855,9 +1863,10 @@ not a substitute for that testplan.
 - Inject an ExternalIP state-file write failure and verify that no partial
   `external_ips` entry is visible, retries reuse the same UUID reservation, and
   terminal failure compensates capacity only after `NOT_COMMITTED`.
-- Verify provider-result annotation validation, idempotent private provider
-  events, consumer exclusivity for Attachment versus NATGateway, field-scoped
-  status updates, and exactly-once `RELEASED` capacity accounting.
+- Verify v1 `osac_result` validation and unversioned annotation compatibility,
+  idempotent private provider events, consumer exclusivity for Attachment versus
+  NATGateway, field-scoped status updates, and exactly-once `RELEASED` capacity
+  accounting.
 - Validate attachment binding keys, host/MAC identity, direction transitions,
   provisioning-network resolution, and idempotent attach/detach state changes,
   including reboot, power-off, and
@@ -2005,8 +2014,9 @@ The operator, fulfillment-service, installer, and AAP collections must agree on:
 - whole-address DNAT inputs and explicit-source SNAT inputs. A component that
   still sends the old single-port DNAT or MASQUERADE-only SNAT arguments must
   not report the consumer Ready.
-- ExternalIP reservation states, provider-result annotation names, private
-  provider-event values, consumer cleanup events, and the rule that only
+- ExternalIP v1 `osac_result` fields and unversioned allocated-address
+  annotation compatibility, private provider-event values, consumer cleanup
+  events, and the rule that only
   fulfillment-service releases pool capacity;
 - ExternalIP status field ownership: fulfillment-service owns `attached`, while
   the operator owns `address`, `state`, `phase`, `conditions`, and provisioning
@@ -2029,16 +2039,17 @@ Support personnel diagnose failures in this order:
 3. Check net-node reachability, state validation, namespace inventory, and
    dnsmasq services. Check BGP session health for NATGateway route operations;
    inspect the local FRR RIB for ExternalIPAttachment route state.
-4. Inspect AAP job status, 'leases' artifacts, provider-result annotations,
-   reservation events, dnsmasq unit/configuration and lease paths, and the
-   agentless role logs.
+4. Inspect AAP job status, 'leases' and v1 `osac_result` artifacts, the
+   allocated-address annotation only for unversioned managers, reservation
+   events, dnsmasq unit/configuration and lease paths, and the agentless logs.
 5. Check the lock-protected state file for the resource UID, VLAN,
    gateway/DHCP, namespace, transit `/30`, veth peer addresses, provider-side
    ExternalIP allocation, attachment local-route next hop, NATGateway BGP
    `/32` prefix/next hop, and owned NAT/DNAT rule mapping. Compare any
    ExternalIP address with
-   `ExternalIP.status.address`, the allocated-address annotation, provider
-   operation ID, and state digest. Confirm the fulfillment-service reservation
+   `ExternalIP.status.address` and provider state. Inspect the allocated-address
+   annotation only when the selected ExternalIP manager is unversioned. Confirm
+   the fulfillment-service reservation
    state and pool counters before diagnosing capacity. Also inspect the stable
    sidecar lock, schema validation result, last-known-good `.bak`, and any
    `StateCorrupt` or recovery event before attempting a repair.
@@ -2080,8 +2091,8 @@ existing mono-repo and tests/e2e patterns.
 ## Provenance
 
 Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
-Phases: revise, revise, revise, revise, revise, revise, revise
+Phases: revise, revise, revise, revise, revise, revise, revise, revise, revise
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
