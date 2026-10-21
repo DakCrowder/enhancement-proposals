@@ -3,7 +3,7 @@ title: import-hub-registered-clusters-for-ai-workloads
 authors:
   - eranco@redhat.com
 creation-date: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-21
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-6488
 prd:
@@ -17,328 +17,186 @@ superseded-by:
   - N/A
 ---
 
-# Import Hub-Registered Clusters for AI Workloads
+# Register Hub-Managed Clusters as Workload Clusters
 
-## Summary
+| Field       | Value |
+|-------------|-------|
+| Author(s)   | Eran Cohen |
+| Jira        | [OSAC-6488](https://redhat.atlassian.net/browse/OSAC-6488) |
+| PRD         | [prd.md](prd.md) |
+| Date        | 2026-10-21 |
 
-This design introduces a new `WorkloadCluster` resource in the
-fulfillment-service that allows Cloud Provider Admins to import ACM
-hub-registered clusters into OSAC as targets for MaaS AI inference
-workloads. Import is a registration operation that creates a persistent
-database record referencing a ManagedCluster on the ACM hub; it does not
-provision infrastructure or create Kubernetes CRDs on the operator. See
-[PRD](prd.md) for detailed requirements.
+# 1. Overview
 
-## Motivation
+This design introduces a provider-global `WorkloadCluster` resource in the
+fulfillment-service that allows Cloud Provider Admins (CPAs) to register
+ACM hub-managed clusters for use as OSAC workload targets. Each
+WorkloadCluster is a canonical representation of one physical cluster
+identified by a `(source_hub_id, hub_cluster_name)` pair with global
+uniqueness. Registration is separate from entitlement: an optional
+`allowed_tenants` field controls which tenants may consume capacity, while
+the WorkloadCluster itself is a provider-level resource visible and
+manageable only by CPAs. Tenant workloads consume capacity indirectly
+through MaaS placement flows. See [PRD](prd.md) for detailed
+requirements.
+
+The design directly consumes OCM `ManagedCluster` CRDs on the Hub via
+list/watch reconciliation, uses declarative conditions rather than an
+imperative state machine, and defines an additive `supported_workloads`
+capability list that starts with MaaS and accommodates future workload
+types (e.g., VMaaS) without schema migration. A single ACM Hub is active
+in this increment; the schema includes an immutable `source_hub_id` for
+future multi-hub compatibility.
+
+# 2. Goals and Non-Goals
+
+## 2.1 Goals
+
+- Define a provider-global canonical `WorkloadCluster` resource with
+  global physical uniqueness enforced by `UNIQUE (source_hub_id,
+  hub_cluster_name)` at the database layer, independent of the existing
+  CaaS `Cluster` resource.
+- Include an immutable `source_hub_id` field in the spec validated against
+  the configured single Hub, with documented future multi-hub resolution
+  path.
+- Consume OCM `ManagedCluster` CRDs directly via list/watch on the Hub's
+  Kubernetes API, with explicit trust, RBAC, version, and availability
+  contracts documented.
+- Use declarative conditions (`Available`, `HubReachable`) to represent
+  cluster state, avoiding imperative import state machines or polling.
+- Support an additive `supported_workloads` capability list starting with
+  `maas`, enabling future `vmaas` coexistence without schema migration.
+- Model registration as explicit external-infrastructure registration
+  while preserving a canonical day-2 WorkloadCluster shape that future
+  CaaS automatic provisioning can create.
+- Restrict all WorkloadCluster discovery and management to the CPA role;
+  tenant workloads consume capacity indirectly through MaaS placement.
+
+## 2.2 Non-Goals
+
+- Disconnecting registered clusters from OSAC (deferred per PRD Out of
+  Scope).
+- Introducing an anti-corruption adapter between OSAC and OCM CRDs.
+  Direct CRD consumption is the chosen approach; extraction triggers are
+  documented in §4.8.
+- Active multi-hub routing or dynamic Hub discovery. This increment uses
+  one configured Hub.
+- Site-level or multi-cluster datacenter aggregation. Each WorkloadCluster
+  maps 1:1 to a ManagedCluster leaf. Parent aggregate resources require a
+  future PRD.
+- CaaS automatic cluster provisioning. This increment covers external
+  registration only; future CaaS integration creates WorkloadClusters
+  automatically through the same resource shape.
+- Managing ACM/Praxis policies, cluster labels, or customer GitOps
+  workflows for AI Grid configuration.
+
+# 3. Motivation / Background
 
 OSAC currently represents clusters only through the CaaS `Cluster`
 resource, which is tightly coupled to HyperShift-based provisioning via
-ClusterOrder CRDs, AAP jobs, and BareMetalInstanceType hardware
-profiles. Cloud providers that already manage AI Grid clusters through
-ACM have no way to register them in OSAC so their capacity can
-participate in MaaS AI workload flows. Providers must either provision
-separate clusters through CaaS or operate AI capacity outside OSAC's
-tenant model, fragmenting tenant controls and limiting infrastructure
-reuse.
+ClusterOrder CRDs, AAP jobs, and BareMetalInstanceType hardware profiles.
+Cloud providers that already manage AI Grid clusters through ACM have no
+path to register them in OSAC so their capacity can participate in MaaS AI
+workload flows. Providers must either provision separate clusters through
+CaaS or operate AI capacity outside OSAC, fragmenting tenant controls and
+limiting infrastructure reuse.
 
-The existing `Cluster` resource cannot represent imported clusters
-without invasive changes: its required fields (`template`, `node_sets`
-with `BareMetalInstanceType` references), provisioning-specific status
-fields (MetalLB VIPs, HostedCluster references), and operator
-integration (ClusterOrder CRD, AAP provisioning jobs) are all
-inapplicable to externally managed clusters. A new resource type
-provides clean separation between provisioned and imported cluster
-lifecycles.
+The existing `Cluster` resource cannot represent registered clusters: its
+required fields (`template`, `node_sets` with `BareMetalInstanceType`
+references), provisioning-specific status (MetalLB VIPs, HostedCluster
+references), and operator integration (ClusterOrder CRD, AAP jobs) are
+inapplicable to externally managed clusters. A separate resource type
+provides clean separation between provisioned and registered cluster
+lifecycles while sharing the canonical WorkloadCluster shape that future
+provisioning modes can also target.
 
-### Goals
+# 4. Design
 
-- Introduce a new `WorkloadCluster` resource type with its own proto,
-  gRPC service, database table, and fulfillment controller, independent
-  of the existing CaaS `Cluster` resource and ClusterOrder CRD.
-- Validate the referenced ACM ManagedCluster on the hub during import
-  and prevent duplicate imports of the same physical cluster.
-- Follow the existing OSAC resource patterns: standard object shape,
-  public/private API split via CleanAPI, OPA-based authorization, and
-  tenant-scoped metadata.
-- Gate the WorkloadCluster service behind the `services.maas.enabled`
-  flag per the OSAC-3046 per-service enablement model.
-- Design the state model and data schema so that future enhancements
-  (disconnect, readiness criteria, multi-tenant sharing) can be added
-  without breaking changes.
-- Define a forward-compatible workload role model on the
-  `WorkloadCluster` resource so that additional roles (e.g., VMaaS)
-  can be introduced in future increments without schema-breaking
-  changes.
-- Restrict all discovery and import operations to the Cloud Provider
-  Admin role; tenant users and other roles must not be able to
-  discover, list, or import WorkloadClusters.
+## 4.1 Architecture
 
-### Non-Goals
+The `WorkloadCluster` resource lives entirely within the
+fulfillment-service. No Kubernetes CRD is created on the OSAC operator
+or on the target cluster. The fulfillment controller validates and
+monitors the referenced `ManagedCluster` directly on the ACM Hub's
+Kubernetes API.
 
-- Provisioning new clusters or managing cluster lifecycle beyond import
-  registration.
-- Disconnecting imported clusters from OSAC (deferred per Locked D5).
-- Defining or enforcing AI workload readiness criteria (deferred per
-  Locked D3).
-- Managing ACM/Praxis policies, cluster labels, or customer GitOps
-  workflows for AI Grid configuration.
-- Using imported clusters for VMaaS, CaaS, or BMaaS workloads in this
-  increment. The `WorkloadRole` enum is extensible by design so that
-  VMaaS and other workload roles can be added in a future increment
-  without breaking changes; however, this design does not implement or
-  validate any role other than MaaS AI inference.
-- Multi-tenant sharing of imported clusters (see Open Question 9.1).
+**Components:**
 
-## Proposal
+1. **WorkloadCluster gRPC service** — List, Get, Create, Update, Delete,
+   Signal RPCs in the fulfillment-service, registered conditionally behind
+   the `--enable-maas` flag per the OSAC-3046 pattern.
+2. **Fulfillment controller** — A reconciler in
+   `fulfillment-service/internal/controllers/` that maintains a
+   SharedInformer (list/watch) on `managedclusters.cluster.open-cluster-management.io/v1`
+   on the Hub. On ManagedCluster events, it reconciles the corresponding
+   WorkloadCluster's conditions.
+3. **PostgreSQL database** — Standard OSAC table with a global uniqueness
+   constraint on `(source_hub_id, hub_cluster_name)`.
 
-A new `WorkloadCluster` resource represents an imported hub-registered
-cluster in the fulfillment-service. Cloud Provider Admins import a
-cluster by calling `WorkloadClusters.Create` with the ACM
-ManagedCluster name. The fulfillment-service validates the cluster
-exists on the hub, creates a database record, and exposes the result
-through the standard OSAC API (gRPC, REST, CLI, UI).
-
-The resource follows the standard OSAC object shape (`id`, `Metadata`,
-`WorkloadClusterSpec`, `WorkloadClusterStatus`). The spec captures the
-import identity (hub cluster reference); the status tracks import state
-and hub availability. No Kubernetes CRD is created on the operator —
-the fulfillment controller validates the hub cluster directly via the
-hub's Kubernetes API.
-
-### Workflow Description
-
-#### Import a Hub-Registered Cluster
-
-**Starting state:** A Cloud Provider Admin has an ACM hub with one or
-more registered ManagedClusters. The MaaS service is enabled in the
-OSAC deployment.
-
-**Authorization:** Only Cloud Provider Admins may call the Create RPC.
-All other roles (Tenant Admin, Tenant User) receive `PermissionDenied`.
-
-1. Cloud Provider Admin calls `WorkloadClusters.Create` via the OSAC
-   API (gRPC, REST, CLI, or UI), providing the ACM ManagedCluster
-   name, the workload role (`MAAS_AI_INFERENCE`), and an optional
-   OSAC display name.
-2. The fulfillment-service validates the request:
-   - The ManagedCluster name must be non-empty.
-   - No existing WorkloadCluster in the same tenant references the
-     same hub cluster name — otherwise return `AlreadyExists`.
-3. The fulfillment-service creates a database record with state
-   `WORKLOAD_CLUSTER_STATE_IMPORTING`.
-4. The fulfillment controller (reconciler) validates the hub cluster:
-   - Queries `managedclusters` on the ACM hub via the hub Kubernetes
-     API.
-   - Confirms the ManagedCluster exists and has condition
-     `HubAcceptedManagedCluster` = True.
-   - Stores the cluster's `id.k8s.io` claim as `hub_cluster_id`
-     (private field) for stable identity.
-5. On success, the controller updates state to
-   `WORKLOAD_CLUSTER_STATE_AVAILABLE` and sets the `Imported`
-   condition to True. Note: AVAILABLE indicates import validation
-   succeeded, not workload readiness — readiness criteria are
-   deferred per Locked D3.
-6. On failure (ManagedCluster not found, not accepted, or hub
-   unreachable), the controller updates state to
-   `WORKLOAD_CLUSTER_STATE_FAILED` and sets the `Failed` condition
-   to True with a predefined reason code and descriptive message.
-   No retry or recovery action is required [Locked: D2].
-   The `Failed` condition is the canonical import-failure indicator;
-   all API, CLI, UI, and test consumers read this condition to
-   determine failure cause.
-7. Cloud Provider Admin observes the import outcome through the API,
-   CLI, or UI.
+**Registration flow:**
 
 ```mermaid
 sequenceDiagram
-    participant Admin as Cloud Provider Admin
+    participant CPA as Cloud Provider Admin
     participant API as Fulfillment API
     participant DB as PostgreSQL
     participant Ctrl as Fulfillment Controller
     participant Hub as ACM Hub K8s API
 
-    Admin->>API: WorkloadClusters.Create(hub_cluster_name)
-    API->>DB: Insert record (state=IMPORTING)
-    API-->>Admin: WorkloadCluster (state=IMPORTING)
+    CPA->>API: WorkloadClusters.Create(source_hub_id, hub_cluster_name, supported_workloads)
+    API->>DB: Validate uniqueness, insert record
+    API-->>CPA: WorkloadCluster (Available=Unknown)
 
-    Ctrl->>DB: Poll for IMPORTING records
-    Ctrl->>Hub: GET managedclusters/{name}
+    Note over Ctrl,Hub: Controller maintains list/watch on ManagedCluster resources
+    Hub-->>Ctrl: ManagedCluster event (add/update)
     alt ManagedCluster exists and accepted
-        Hub-->>Ctrl: ManagedCluster (Available=True)
-        Ctrl->>DB: Update state=AVAILABLE, store hub_cluster_id
-    else Not found / not accepted / hub unreachable
-        Hub-->>Ctrl: Error or condition not met
-        Ctrl->>DB: Update state=FAILED, set condition reason
+        Ctrl->>DB: Set Available=True, HubReachable=True, store hub_cluster_uid
+    else Not found or not accepted
+        Ctrl->>DB: Set Available=False with reason
     end
 
-    Admin->>API: WorkloadClusters.Get(id)
-    API->>DB: Read record
-    API-->>Admin: WorkloadCluster (state=AVAILABLE or FAILED)
+    CPA->>API: WorkloadClusters.Get(id)
+    API-->>CPA: WorkloadCluster (conditions reflect current state)
 ```
 
-The diagram shows the import flow from the Cloud Provider Admin's
-perspective. The fulfillment controller runs asynchronously; the admin
-observes the final state by polling or watching the resource.
+The diagram shows the registration and reconciliation flow. The Create RPC
+returns immediately after database insertion. The controller independently
+watches ManagedCluster resources on the Hub and updates conditions as the
+cluster's state changes. This is a declarative model: conditions always
+reflect the current observed state of the ManagedCluster, not the history
+of a one-time import operation. The CPA observes the outcome by reading
+the resource at any time.
 
-#### State Machine
+**Direct OCM CRD consumption:** The fulfillment controller directly
+consumes `ManagedCluster` CRDs from the Hub's Kubernetes API without an
+intermediate anti-corruption adapter. This follows existing OSAC patterns
+for external CRD consumption. The trust contract is:
 
-```mermaid
-stateDiagram-v2
-    [*] --> IMPORTING : Create RPC
-    IMPORTING --> AVAILABLE : Hub cluster valid and accepted
-    IMPORTING --> FAILED : Hub cluster not found / not accepted / hub unreachable
-    AVAILABLE --> UNAVAILABLE : Hub cluster unreachable or removed
-    UNAVAILABLE --> AVAILABLE : Hub cluster recovers
-    FAILED --> [*] : Admin deletes
-    AVAILABLE --> [*] : Admin deletes
-    UNAVAILABLE --> [*] : Admin deletes
-```
+| Dependency | Contract |
+|---|---|
+| API group | `cluster.open-cluster-management.io/v1` (GA, stable) |
+| RBAC | Read-only: `get`, `list`, `watch` on `managedclusters` |
+| Required conditions | `HubAcceptedManagedCluster`, `ManagedClusterConditionAvailable` |
+| Required claims | `id.k8s.io` ClusterClaim for stable UID |
+| Availability | Hub API must be reachable; transient failures are tolerated via watch reconnect |
+| Version pinning | Client pins `cluster.open-cluster-management.io/v1`; version bumps require controller update |
 
-AVAILABLE indicates import validation succeeded and the hub cluster is
-reachable — it does not represent workload readiness (deferred per
-Locked D3). UNAVAILABLE signals that the MaaS placement layer should
-not schedule new workloads to this cluster.
+**Extraction triggers** for introducing an adapter layer in the future:
+- OCM deprecates the `v1` ManagedCluster API with a breaking successor
+- A second Hub vendor with a different CRD schema must be supported
+- The consumed CRD surface exceeds the current read-only contract (e.g.,
+  write operations become necessary)
 
-#### Discover and View Import Outcome
+**1:1 ManagedCluster leaf mapping:** Each WorkloadCluster maps to exactly
+one ManagedCluster on one Hub. Site-level or multi-cluster datacenter
+aggregation (grouping multiple ManagedClusters under a parent resource)
+is out of scope and requires a future parent aggregate PRD.
 
-**Starting state:** A WorkloadCluster has been created.
+## 4.2 Data Model / Schema Changes
 
-**Authorization:** Only Cloud Provider Admins may call the Get and
-List RPCs. Tenant Admins, Tenant Users, and all other roles receive
-`PermissionDenied`. Discovery of WorkloadCluster resources is
-exclusively a Cloud Provider Admin operation.
-
-1. Cloud Provider Admin calls `WorkloadClusters.Get` or
-   `WorkloadClusters.List` via API, CLI, or UI.
-2. The response includes the current state, conditions, and hub
-   cluster metadata.
-3. If the import failed, the `Failed` condition's `reason` and
-   `message` fields describe the cause.
-
-### API Extensions
-
-This design adds one new gRPC service:
-
-- **`WorkloadClusters`** — a new service in the fulfillment-service
-  with List, Get, Create, Update, Delete, and Signal RPCs following the
-  standard OSAC service pattern.
-- The service is registered conditionally based on the
-  `--enable-maas` flag per the OSAC-3046 pattern. When MaaS is
-  disabled, calls return `codes.Unavailable` with a descriptive
-  message.
-- No existing resources or services are modified.
-
-## UX Alignment
-
-No `@temp-api` file exists at
-`osac-ux/libs/ui-components/src/api/v1/workload_cluster.ts`. The UI
-will be built from the generated protobuf TypeScript types after the
-proto is merged. No pre-existing UI field mapping or deviation to
-reconcile.
-
-### Implementation Details/Notes/Constraints
-
-#### Proto Schema
-
-**`proto/private/osac/private/v1/workload_cluster_type.proto`**
-
-```protobuf
-message WorkloadCluster {
-  string id = 1;
-  Metadata metadata = 2;
-  WorkloadClusterSpec spec = 3;
-  WorkloadClusterStatus status = 4;
-}
-
-enum WorkloadRole {
-  WORKLOAD_ROLE_UNSPECIFIED = 0;
-  // MaaS AI inference workloads. Only supported role in this increment.
-  WORKLOAD_ROLE_MAAS_AI_INFERENCE = 1;
-  // Reserved for future use — not accepted by validation in this
-  // increment. Listed here to illustrate extensibility; the proto
-  // enum is additive-only per proto3 compatibility rules.
-  // WORKLOAD_ROLE_VMAAS = 2;
-}
-
-message WorkloadClusterSpec {
-  // Name of the ManagedCluster on the ACM hub.
-  // Immutable after creation. Required.
-  string hub_cluster_name = 1;
-
-  // The workload role this cluster serves.
-  // Immutable after creation. Required.
-  // Validation: the Create handler rejects any value other than
-  // WORKLOAD_ROLE_MAAS_AI_INFERENCE in this increment, returning
-  // InvalidArgument. Future increments add accepted values to the
-  // validation allow-list without a schema migration.
-  WorkloadRole workload_role = 2;
-}
-
-message WorkloadClusterStatus {
-  // Overall state of the workload cluster.
-  WorkloadClusterState state = 1;
-
-  // Conditions describing the status in detail.
-  repeated WorkloadClusterCondition conditions = 2;
-
-  // Kubernetes version reported by the ManagedCluster.
-  string kubernetes_version = 3;
-
-  // Platform reported by the ManagedCluster
-  // (e.g., "AWS", "BareMetal").
-  string platform = 4;
-
-  // Timestamp when the cluster entered its current state.
-  optional google.protobuf.Timestamp state_transition_time = 5;
-
-  // Stable cluster UUID from the ManagedCluster's
-  // id.k8s.io claim. Used for duplicate detection.
-  string hub_cluster_id = 6
-      [(cleanapi.field).private = true];
-}
-
-enum WorkloadClusterState {
-  WORKLOAD_CLUSTER_STATE_UNSPECIFIED = 0;
-  WORKLOAD_CLUSTER_STATE_IMPORTING = 1;
-  WORKLOAD_CLUSTER_STATE_AVAILABLE = 2;
-  WORKLOAD_CLUSTER_STATE_UNAVAILABLE = 3;
-  WORKLOAD_CLUSTER_STATE_FAILED = 4;
-}
-
-message WorkloadClusterCondition {
-  WorkloadClusterConditionType type = 1;
-  bool status = 2;
-  string reason = 3;
-  string message = 4;
-  google.protobuf.Timestamp last_transition_time = 5;
-}
-
-enum WorkloadClusterConditionType {
-  WORKLOAD_CLUSTER_CONDITION_TYPE_UNSPECIFIED = 0;
-  // Import validation succeeded.
-  WORKLOAD_CLUSTER_CONDITION_TYPE_IMPORTED = 1;
-  // ManagedCluster is reachable on the hub.
-  WORKLOAD_CLUSTER_CONDITION_TYPE_HUB_REACHABLE = 2;
-  // Import validation failed.
-  WORKLOAD_CLUSTER_CONDITION_TYPE_FAILED = 3;
-}
-```
-
-**`proto/private/osac/private/v1/workload_clusters_service.proto`**
-
-Standard service following the OSAC pattern: List, Get, Create, Update,
-Delete, Signal (private). Create is the public import operation — unlike
-`Clusters.Create` which is system-internal, `WorkloadClusters.Create`
-is user-facing for Cloud Provider Admins.
-
-HTTP route mapping: `option (cleanapi.file).http_route_prefix_map =
-"private:fulfillment"` rewrites `/api/private/v1/workload-clusters` to
-`/api/fulfillment/v1/workload-clusters` in the public API.
-
-#### Database Schema
-
-New migration creates the `workload_clusters` table following the
-standard OSAC pattern:
+New migration creates the `workload_clusters` table. This is a
+provider-level resource with no `tenant` column — entitlement is managed
+through the `allowed_tenants` field in the spec JSONB.
 
 ```sql
 CREATE TABLE workload_clusters (
@@ -348,7 +206,6 @@ CREATE TABLE workload_clusters (
   deletion_timestamp TIMESTAMP,
   finalizers TEXT[],
   creator TEXT,
-  tenant TEXT,
   labels JSONB,
   annotations JSONB,
   data JSONB,
@@ -362,582 +219,915 @@ CREATE TABLE archived_workload_clusters (
 
 CREATE INDEX idx_workload_clusters_name
   ON workload_clusters (name);
-CREATE INDEX idx_workload_clusters_tenant
-  ON workload_clusters (tenant);
 CREATE INDEX idx_workload_clusters_labels
   ON workload_clusters USING GIN (labels);
 
--- Enforce tenant-scoped hub-cluster uniqueness atomically.
--- The expression index extracts hub_cluster_name from the JSONB data
--- column where the generic server stores spec fields.
-CREATE UNIQUE INDEX uq_workload_clusters_tenant_hub
-  ON workload_clusters (tenant, (data->>'hub_cluster_name'))
+-- Global physical uniqueness: one canonical record per physical cluster.
+-- Enforces that no two non-deleted WorkloadClusters reference the same
+-- ManagedCluster on the same Hub.
+CREATE UNIQUE INDEX uq_workload_clusters_hub_identity
+  ON workload_clusters (
+    (data->>'source_hub_id'),
+    (data->>'hub_cluster_name')
+  )
   WHERE deletion_timestamp IS NULL;
 ```
 
-Name uniqueness is enforced per (tenant, project, resource type) by the
-generic server layer.
+The `uq_workload_clusters_hub_identity` index is the authoritative
+concurrency guard for physical uniqueness. The DAO translates a
+constraint-violation error from this index into an `AlreadyExists` gRPC
+status. The application-level lookup described in §4.3 is an early error
+check that provides user-friendly messages but is not the concurrency
+guard.
 
-The migration must persist the effective `hub_cluster_name` value in a
-uniquely indexable field and enforce a database unique constraint (or
-unique expression index) on `(tenant, hub_cluster_name)` for
-non-deleted records. The DAO must translate a constraint-violation
-error from this index into an `AlreadyExists` gRPC status. This
-constraint is the authoritative concurrency guard — the application-
-level lookup described below is an early error check only.
+**Provider-global generic server adaptation:** The OSAC generic server
+layer normally scopes resources by tenant (tenant column, tenant filter
+in List/Get, `(tenant, project, resource_type, name)` uniqueness). Because
+WorkloadCluster is a provider-level resource with no tenant column, the
+following adaptations are required:
 
-#### Duplicate Detection
+- **DAO:** The WorkloadCluster DAO must omit tenant filtering from List
+  and Get queries. Name uniqueness is enforced globally per resource type,
+  not per tenant/project.
+- **OPA:** The WorkloadCluster authorization policy must evaluate CPA role
+  membership without requiring a tenant context in the request. All five
+  permissions (`workload_cluster:{list,get,create,update,delete}`) are
+  granted only to the CPA role.
+- **Generic server registration:** The WorkloadCluster service must be
+  registered as a provider-level resource so the generic server layer
+  bypasses tenant scoping.
 
-The fulfillment-service Create handler performs two checks:
+These adaptations match the approach used for other provider-level
+resources (e.g., the Tenant resource itself is managed by admins, not
+scoped to a tenant).
 
-1. **Name uniqueness** — standard OSAC check, returns `AlreadyExists`
-   if a WorkloadCluster with the same name exists in the same tenant
-   and project.
-2. **Hub cluster identity uniqueness** — queries existing
-   WorkloadClusters in the same tenant for a matching
-   `hub_cluster_name` in the spec. Returns `AlreadyExists` with
-   message "a workload cluster referencing hub cluster '{name}'
-   already exists" if found.
+**Post-validation immutable UID:** After the controller first validates
+the ManagedCluster, it extracts the `id.k8s.io` ClusterClaim and stores
+it as `hub_cluster_uid` in the status JSONB. This UID is immutable after
+first write — if the controller detects a different UID for the same
+`hub_cluster_name`, it sets `Available=False` with reason
+`ClusterIdentityMismatch`, indicating the name now points to a different
+physical cluster and administrative action is required.
 
-The application-level lookup (check 2) is an early error check that
-provides a user-friendly error message. It is **not** the concurrency
-guard. Two concurrent `Create` requests with different OSAC names but
-the same `hub_cluster_name` may both pass the lookup; the database
-unique constraint catches the second insert and the DAO translates the
-violation to `AlreadyExists`. This ensures exactly one import succeeds
-under concurrent requests, satisfying FR-4.
+## 4.3 API Changes
 
-#### Fulfillment Controller
+### Proto Schema
 
-A new `workload_cluster_controller.go` in
-`fulfillment-service/internal/controllers/` follows the existing
-reconciler pattern:
+**`proto/private/osac/private/v1/workload_cluster_type.proto`**
 
-1. Polls `WorkloadClusters.List` via the private API, filtering for
-   records that need reconciliation (state = IMPORTING, or periodic
-   health check for AVAILABLE records).
-2. For IMPORTING records: queries the ACM hub K8s API for the
-   ManagedCluster, validates conditions, stores identity claims,
-   transitions to AVAILABLE or FAILED.
-3. For AVAILABLE records: periodically checks the ManagedCluster's
-   `ManagedClusterConditionAvailable` condition. If the cluster
-   becomes unreachable, transitions to UNAVAILABLE. If it recovers,
-   transitions back to AVAILABLE.
-4. Uses Signal RPC to notify the fulfillment-service of state
-   changes.
+```protobuf
+message WorkloadCluster {
+  string id = 1;
+  Metadata metadata = 2;
+  WorkloadClusterSpec spec = 3;
+  WorkloadClusterStatus status = 4;
+}
 
-The controller connects to the hub using the hub kubeconfig mounted
-from the `hub-kubeconfig` Secret in the fulfillment-service namespace.
-This is the same credential the osac-operator uses for ClusterOrder
-management, provisioned during OSAC installation via Helm values. If
-the Secret is missing or the kubeconfig is invalid, the controller
-logs an error at startup and all import validations fail with
-`HubUnreachable` until the credential is corrected.
+message WorkloadClusterSpec {
+  // Identifier of the ACM Hub where the ManagedCluster is registered.
+  // Immutable after creation. Required.
+  // Validated against the fulfillment-service's configured Hub identity.
+  // Future increments may support multiple Hubs with dynamic routing;
+  // the schema supports this without migration.
+  string source_hub_id = 1;
 
-### Security Considerations
+  // Name of the ManagedCluster resource on the Hub.
+  // Immutable after creation. Required.
+  // Together with source_hub_id, forms the globally unique physical
+  // identity of this cluster.
+  string hub_cluster_name = 2;
+
+  // Additive list of workload capabilities this cluster supports.
+  // At least one value required. Known values: "maas".
+  // Unknown values are rejected with InvalidArgument.
+  // Future values (e.g., "vmaas") are added to the validation
+  // allow-list without schema migration.
+  repeated string supported_workloads = 3;
+
+  // Tenant IDs permitted to consume capacity from this cluster.
+  // Empty or unset: provider-owned shared pool available to all tenants.
+  // Populated: only listed tenants may consume capacity through
+  // MaaS placement. Mutable by CPA.
+  repeated string allowed_tenants = 4;
+}
+
+message WorkloadClusterStatus {
+  // Conditions describing the current observed state.
+  // No state enum — conditions are the canonical status representation.
+  repeated WorkloadClusterCondition conditions = 1;
+
+  // Stable cluster UUID from the ManagedCluster's id.k8s.io
+  // ClusterClaim. Set by the controller after first successful
+  // validation. Immutable after first write. Used for physical
+  // identity verification.
+  string hub_cluster_uid = 2
+      [(cleanapi.field).private = true];
+}
+
+message WorkloadClusterCondition {
+  // Condition type.
+  string type = 1;
+  // Condition status: "True", "False", or "Unknown".
+  string status = 2;
+  // Machine-readable reason code (CamelCase).
+  string reason = 3;
+  // Human-readable message.
+  string message = 4;
+  // Timestamp of last status change.
+  google.protobuf.Timestamp last_transition_time = 5;
+}
+```
+
+**Condition types and semantics:**
+
+| Condition | True | False | Unknown |
+|---|---|---|---|
+| `Available` | ManagedCluster exists on Hub, is accepted, and Hub is reachable. Cluster is eligible for workload placement. | ManagedCluster not found, not accepted, or identity mismatch. Cluster is not eligible for placement. | Initial state after Create; controller has not yet reconciled. |
+| `HubReachable` | Hub Kubernetes API is reachable and responding. | Hub API is unreachable. Transient condition; controller reconnects via watch. | Initial state or during controller restart. |
+
+**Condition reasons (predefined, allow-listed):**
+
+| Reason | Condition | Meaning |
+|---|---|---|
+| `ValidationSucceeded` | Available=True | ManagedCluster validated and accepted |
+| `ManagedClusterNotFound` | Available=False | No ManagedCluster with this name on the Hub |
+| `ManagedClusterNotAccepted` | Available=False | ManagedCluster exists but `HubAcceptedManagedCluster` is not True |
+| `HubUnreachable` | Available=False, HubReachable=False | Cannot reach Hub API |
+| `ClusterIdentityMismatch` | Available=False | `hub_cluster_uid` changed — name points to different physical cluster |
+| `ManagedClusterRemoved` | Available=False | ManagedCluster was previously validated but no longer exists |
+
+Note: there is no `Failed` state or condition on the WorkloadCluster. A
+registration lookup failure does not mean the cluster itself has failed —
+it means the referenced ManagedCluster was not found or not accepted on
+the Hub at the time of observation. The `Available` condition reflects the
+current observed state and updates declaratively as the situation changes.
+
+**Validation rules:**
+
+| Field | Rule | Error |
+|---|---|---|
+| `source_hub_id` | Non-empty; must match the configured Hub identity | `InvalidArgument` |
+| `hub_cluster_name` | Non-empty; DNS label format (RFC 1123) | `InvalidArgument` |
+| `supported_workloads` | At least one value; all values in allow-list (`maas`) | `InvalidArgument` for empty or unknown values |
+| `allowed_tenants` | Optional; if present, each value must be a valid tenant ID | `InvalidArgument` for invalid tenant IDs |
+| `source_hub_id` | Immutable after creation | `InvalidArgument` on update |
+| `hub_cluster_name` | Immutable after creation | `InvalidArgument` on update |
+
+**Unknown `supported_workloads` value behavior:** The Create and Update
+handlers reject any value not in the current allow-list with
+`InvalidArgument` and a message listing accepted values. This prevents
+clusters from being registered with capabilities the system cannot verify
+or use. The allow-list is extended in code when new workload types are
+implemented — no database migration is needed.
+
+**`proto/private/osac/private/v1/workload_clusters_service.proto`**
+
+Standard service following the OSAC pattern: List, Get, Create, Update,
+Delete, Signal (private). Create is the public registration operation.
+
+HTTP route mapping: `option (cleanapi.file).http_route_prefix_map =
+"private:fulfillment"` rewrites `/api/private/v1/workload-clusters` to
+`/api/fulfillment/v1/workload-clusters` in the public API.
+
+### Duplicate Detection
+
+The Create handler performs one application-level check before insertion:
+
+- Queries existing non-deleted WorkloadClusters for a matching
+  `(source_hub_id, hub_cluster_name)` pair. Returns `AlreadyExists`
+  with message "a workload cluster referencing ManagedCluster
+  '{hub_cluster_name}' on hub '{source_hub_id}' already exists."
+
+This check is an early user-friendly error path. The database unique
+index `uq_workload_clusters_hub_identity` is the authoritative
+concurrency guard: two concurrent Create requests with the same
+`(source_hub_id, hub_cluster_name)` but different OSAC names may both
+pass the application check, but only one insert succeeds. The DAO
+translates the constraint violation to `AlreadyExists`.
+
+Name uniqueness within the resource type is enforced by the generic server
+layer.
+
+### Placement Filtering
+
+MaaS placement queries WorkloadClusters to discover available capacity:
+
+1. Filter by `supported_workloads` containing `"maas"`.
+2. Filter by `Available=True` condition.
+3. If `allowed_tenants` is populated, filter to clusters where
+   the requesting tenant is in the list. If `allowed_tenants` is
+   empty/unset, the cluster is available to all tenants.
+
+This query uses the standard List RPC with CEL filter expressions. No
+additional query endpoints are required for this increment.
+
+## 4.4 Scalability and Performance
+
+**CPU and memory:** The fulfillment controller maintains one
+SharedInformer for ManagedCluster resources on the Hub. Memory usage
+scales linearly with the number of ManagedClusters on the Hub
+(typically tens to low hundreds). CPU usage is event-driven — the
+controller processes only ManagedCluster add/update/delete events.
+
+**Database load:** Registration is a low-frequency CPA operation (tens of
+clusters, not thousands). Read load from MaaS placement queries scales
+with placement frequency, not cluster count. The GIN index on labels and
+the uniqueness index are sufficient for this scale.
+
+**Storage:** Each WorkloadCluster record is a single JSONB row.
+Negligible storage impact.
+
+**Assumptions:** The deployment supports up to ~500 registered
+WorkloadClusters per Hub. Beyond this, the SharedInformer's memory
+footprint should be evaluated. The current design does not require
+pagination or sharding for the ManagedCluster watch.
+
+## 4.5 Security Considerations
 
 The WorkloadCluster resource inherits the existing OSAC security model:
-JWT authentication, OPA authorization, tenant-scoped database queries.
+JWT authentication and OPA authorization.
 
-**New OPA permissions:**
+**OPA permissions (CPA-only):**
 - `workload_cluster:list` — Cloud Provider Admin
 - `workload_cluster:get` — Cloud Provider Admin
 - `workload_cluster:create` — Cloud Provider Admin
 - `workload_cluster:update` — Cloud Provider Admin
 - `workload_cluster:delete` — Cloud Provider Admin
 
-Per Locked D6, imported cluster details are visible only to Cloud
-Provider Admins. Tenant Admins and Tenant Users access AI capacity
-through MaaS workload flows; they do not see WorkloadCluster resources
-directly. The OPA policies enforce this by granting `workload_cluster:*`
-permissions only to the Cloud Provider Admin role.
+No other role has any WorkloadCluster permission. Tenant workloads
+consume capacity indirectly through MaaS placement.
 
 **Input validation:**
-- `hub_cluster_name` validated as non-empty string matching DNS label
-  format (RFC 1123, consistent with ManagedCluster naming).
-- No user-supplied data is forwarded to the hub API without validation.
+- `hub_cluster_name` validated as DNS label (RFC 1123).
+- `source_hub_id` validated against the configured Hub identity.
+- `supported_workloads` validated against the allow-list.
+- `allowed_tenants` validated as existing tenant IDs.
+- No user-supplied data is forwarded to the Hub API without validation.
 
-**Hub API access:** The fulfillment controller uses a read-only
-kubeconfig for the hub (only `get`/`list`/`watch` on
-`managedclusters`). No write operations are performed on the hub or on
-managed clusters.
+**Credential ownership:** The fulfillment controller authenticates to the
+Hub using a kubeconfig mounted from the `hub-kubeconfig` Secret in the
+fulfillment-service namespace. This Secret is provisioned during OSAC
+installation via Helm values. The credential grants read-only access
+(`get`, `list`, `watch`) to `managedclusters` on the Hub — no write
+operations are performed. If the Secret is missing or invalid, the
+controller logs an error at startup and sets `HubReachable=False` on all
+WorkloadClusters until the credential is corrected. The fulfillment-service
+deployment owns this credential lifecycle.
 
-**Failure message exposure:** Condition reason and message fields on
-failed imports use only predefined reason codes (`HubClusterNotFound`,
-`HubClusterNotAccepted`, `HubUnreachable`) and generic cause
-descriptions. These fields are visible only to Cloud Provider Admins
-per Locked D6.
+**Failure message exposure:** Condition `reason` and `message` fields
+use only predefined reason codes and generic cause descriptions (see
+§4.3 condition reasons table). These fields are visible only to CPAs.
 
 **Logging redaction policy:** All structured log entries emitted by the
-WorkloadCluster service and controller must comply with the following
-allow-list / deny-list policy:
+WorkloadCluster service and controller comply with the following policy:
 
 - **Allowed fields:** opaque OSAC resource ID (`workload_cluster_id`),
-  `workload_role` enum value, state transition (`from_state`,
-  `to_state`), predefined reason code, Prometheus metric labels,
-  request latency, and allow-listed error categories (`hub_unreachable`,
-  `hub_cluster_not_found`, `hub_cluster_not_accepted`,
-  `constraint_violation`, `invalid_argument`).
+  `supported_workloads` values, condition type and status, predefined
+  reason code, Prometheus metric labels, request latency, `component`,
+  `operation`, `request_id` (opaque, non-sensitive).
 - **Denied fields (must never appear in any log level):** tenant
-  identifiers (tenant ID, tenant name, organization ID),
-  ManagedCluster names, `hub_cluster_name` spec values, credentials,
-  kubeconfig content, raw hub API error bodies, stack traces, hub
-  URLs, internal network addresses, and bearer tokens.
-- **Format:** JSON structured logging via the project's standard
-  `slog` configuration. Each log entry must include `component`,
-  `operation`, and `request_id` fields.
-- **Validation:** Unit tests must assert that controller log output
-  for each failure mode contains only allowed fields. Integration
-  tests must assert that no denied field appears in the combined
-  service log output for a complete import cycle.
+  identifiers, ManagedCluster names, `hub_cluster_name` spec values,
+  credentials, kubeconfig content, raw Hub API error bodies, stack
+  traces, Hub URLs, internal network addresses, and bearer tokens.
+- **Format:** JSON structured logging via the project's standard `slog`
+  configuration.
+- **Validation:** Unit tests assert that controller log output for each
+  failure mode contains only allowed fields. Integration tests assert
+  that no denied field appears in combined service log output for a
+  complete registration cycle. See §10 Test Plan.
 
-### Failure Handling and Recovery
+## 4.6 Failure Handling and Recovery
 
-| Failure Mode | What Happens | Recovery | User Observes |
+All controller operations are idempotent and declarative. Conditions
+reflect current observed state, not operation history. Recovery is
+automatic when the underlying situation resolves.
+
+| Failure Mode | Condition Effect | Recovery | CPA Observes |
 |---|---|---|---|
-| ManagedCluster not found on hub | Controller sets FAILED state, `Failed` condition True with reason `HubClusterNotFound` | Admin can delete the failed WorkloadCluster and retry with a correct name | State=FAILED, `Failed` condition message: "ManagedCluster not found on the ACM hub" |
-| ManagedCluster not accepted by hub | Controller sets FAILED state, `Failed` condition True with reason `HubClusterNotAccepted` | Admin resolves hub-side acceptance, deletes and reimports | State=FAILED, `Failed` condition message: "ManagedCluster exists but is not accepted by the hub" |
-| Hub unreachable during import | Controller sets FAILED state, `Failed` condition True with reason `HubUnreachable` | Admin or infrastructure team restores hub connectivity; admin deletes and reimports | State=FAILED, `Failed` condition message: "Cannot reach ACM hub to validate cluster" |
-| Hub becomes unreachable after import | Controller transitions AVAILABLE to UNAVAILABLE, sets `HubReachable` condition False | Automatic: controller retries periodically; transitions back to AVAILABLE when hub is reachable and ManagedCluster Available | State=UNAVAILABLE, condition message: "ManagedCluster is no longer reachable on the ACM hub" |
-| ManagedCluster removed from hub after import | Controller transitions to UNAVAILABLE with reason `HubClusterRemoved` | Admin deletes the WorkloadCluster | State=UNAVAILABLE, condition message: "ManagedCluster '{name}' no longer exists on the ACM hub" |
-| Database write failure during import | Create RPC returns an error to the caller | Standard gRPC retry by client | gRPC error (e.g., `Internal`) |
-| Duplicate import attempt | Create RPC returns `AlreadyExists` | No action needed — the duplicate is rejected; admin can verify the existing record via Get/List | `AlreadyExists` error with descriptive message |
+| ManagedCluster not found on Hub | `Available=False`, reason `ManagedClusterNotFound` | Automatic: when ManagedCluster is created on Hub, watch event triggers reconciliation and sets `Available=True` | Condition message: "ManagedCluster '{name}' not found on hub '{hub_id}'" |
+| ManagedCluster not accepted by Hub | `Available=False`, reason `ManagedClusterNotAccepted` | Automatic: when Hub accepts the ManagedCluster, watch event triggers update | Condition message: "ManagedCluster exists but is not accepted by the hub" |
+| Hub API unreachable | `Available=False`, `HubReachable=False`, reason `HubUnreachable` | Automatic: watch reconnects when Hub recovers; conditions update on reconnection | Condition message: "Cannot reach ACM hub to validate cluster" |
+| Hub recovers after outage | `HubReachable=True`; `Available` updated based on ManagedCluster state | Automatic via watch reconnect | Conditions reflect current state |
+| ManagedCluster removed from Hub after registration | `Available=False`, reason `ManagedClusterRemoved` | CPA deletes the WorkloadCluster or re-registers if the ManagedCluster returns | Condition message: "ManagedCluster '{name}' no longer exists on the hub" |
+| Cluster identity mismatch (UID changed) | `Available=False`, reason `ClusterIdentityMismatch` | CPA deletes and re-registers. The `hub_cluster_name` now points to a different physical cluster. | Condition message: "ManagedCluster UID changed; name may point to a different physical cluster" |
+| Database write failure during Create | Create RPC returns gRPC error | Standard gRPC retry by client | gRPC error (e.g., `Internal`) |
+| Duplicate registration attempt | Create RPC returns `AlreadyExists` | No action needed — the existing record is canonical | `AlreadyExists` with descriptive message |
 
-All controller operations are idempotent. If the controller restarts
-mid-reconciliation, it re-reads the current state from the database
-and resumes from the last persisted state.
+Note: there is no terminal `FAILED` state. The `Available=False` condition
+is not a final judgment on the cluster — it describes the current observed
+state. If a ManagedCluster that was not found is later created on the Hub,
+the watch event triggers reconciliation and the condition transitions to
+`Available=True`. The CPA's only recovery action is to correct the
+underlying situation (fix Hub connectivity, correct the ManagedCluster
+name, accept the cluster on the Hub) — the system reconciles
+automatically.
 
-### RBAC / Tenancy
+If the CPA determines the registration is permanently invalid (wrong
+name, wrong Hub), they delete the WorkloadCluster and create a new one.
 
-The WorkloadCluster resource uses the standard OSAC tenant isolation
-metadata:
+## 4.7 RBAC / Tenancy
 
-- `metadata.tenant` — Set automatically from the authenticated
-  caller's tenant context. All database queries are filtered by
-  tenant.
-- `osac.openshift.io/tenant` annotation — Applied by the generic
-  server layer.
-- `osac.openshift.io/owner-reference` annotation — Applied by the
-  generic server layer, linking the resource to the creating user's
-  identity for audit and ownership tracking.
+The WorkloadCluster is a **provider-level resource**, not scoped to any
+tenant or project. This reflects that the physical cluster infrastructure
+belongs to the cloud service provider, not to any individual tenant.
 
-OPA policies restrict all WorkloadCluster operations — including
-discovery (List), inspection (Get), import (Create), modification
-(Update), and removal (Delete) — to the Cloud Provider Admin role.
+**CPA-only management:** All WorkloadCluster operations — discovery
+(List), inspection (Get), registration (Create), modification (Update),
+and removal (Delete) — are restricted to the Cloud Provider Admin role.
 Tenant Admins, Tenant Users, and all other roles receive
-`PermissionDenied` for every WorkloadCluster RPC. They access
-imported cluster capacity indirectly through MaaS AI workload flows
-and never observe WorkloadCluster resources in any API, CLI, or UI
-surface.
+`PermissionDenied` for every WorkloadCluster RPC. They never observe
+WorkloadCluster resources in any API, CLI, or UI surface.
 
-**Tenant allocation model [Unresolved]:** Whether an imported
-WorkloadCluster's capacity is available to AI workloads from the
-owning tenant only (single-tenant) or from multiple tenants
-(multi-tenant) is unresolved (see Open Question 9.1). The current
-design uses single-tenant ownership as the default: the
-WorkloadCluster is scoped to the importing admin's tenant. If
-multi-tenant sharing is needed, a future enhancement can add a sharing
-mechanism (e.g., a `shared` flag or a tenant-assignment list) without
-schema changes.
+**Entitlement via `allowed_tenants`:**
 
-### Observability and Monitoring
+| `allowed_tenants` value | Semantics |
+|---|---|
+| Empty or unset | Provider-owned shared pool. All tenants may consume capacity from this cluster through MaaS placement. |
+| Populated (e.g., `["tenant-a", "tenant-b"]`) | Only listed tenants may consume capacity. MaaS placement filters by tenant membership. |
+
+The `allowed_tenants` field is mutable — the CPA can update it to add or
+remove tenants without re-registering the cluster. Validation ensures all
+tenant IDs in the list reference existing tenants.
+
+**Tenant workload consumption:** Tenants access registered cluster
+capacity indirectly through MaaS AI workload flows. MaaS placement
+queries WorkloadClusters with `Available=True` and the appropriate
+`supported_workloads` value, then filters by `allowed_tenants`
+entitlement. Tenants do not know which specific WorkloadCluster serves
+their workload — they see only the MaaS workload result.
+
+**No owner-reference or tenant annotation:** Because WorkloadCluster is
+a provider-level resource, it does not carry the standard
+`osac.openshift.io/tenant` annotation or `osac.openshift.io/owner-reference`
+annotation. The `creator` field in the generic server layer records the
+CPA identity for audit purposes.
+
+## 4.8 Extensibility / Future-Proofing
+
+**Adding workload capabilities:** To support VMaaS workloads on
+registered clusters, a future increment adds `"vmaas"` to the
+`supported_workloads` validation allow-list. No database migration,
+schema change, or proto field addition is required. A single cluster can
+support both `["maas", "vmaas"]` simultaneously — capabilities are
+additive, not exclusive.
+
+**Multi-hub support:** The `source_hub_id` field in the spec uniquely
+identifies the Hub. In this increment, the fulfillment controller
+validates it against the single configured Hub identity and uses the
+single Hub connection. A future multi-hub increment would:
+1. Introduce a Hub registry mapping `source_hub_id` to connection
+   configuration.
+2. Route controller reconciliation to the appropriate Hub connection
+   based on `source_hub_id`.
+3. No WorkloadCluster schema migration — `source_hub_id` is already
+   part of the uniqueness constraint.
+
+The design does not implement dynamic Hub resolution; it documents the
+schema readiness for it.
+
+**CaaS automatic registration:** Future CaaS provisioning can create
+WorkloadClusters automatically after cluster provisioning completes. The
+WorkloadCluster shape is the same regardless of whether registration is
+manual (CPA-driven) or automatic (CaaS-driven). A CaaS integration would
+call `WorkloadClusters.Create` internally after the provisioned cluster
+is registered on the Hub.
+
+**OCM adapter extraction:** The direct OCM CRD consumption described in
+§4.1 is the current approach. If an anti-corruption adapter becomes
+necessary (see extraction triggers in §4.1), it would be introduced as an
+internal layer between the controller and the Hub API without changing the
+WorkloadCluster API or schema.
+
+**Sites and cluster groups:** Aggregating multiple WorkloadClusters into
+site-level or datacenter-level groups is out of scope. If needed, a future
+parent aggregate resource would reference WorkloadClusters without
+changing their schema.
+
+# 5. Interface Changes
+
+## IC-1: WorkloadCluster Create (Register) RPC
+
+**Requirements:** FR-1
+
+CPA registers a Hub-managed cluster by calling
+`WorkloadClusters.Create` via gRPC or REST
+(`POST /api/fulfillment/v1/workload-clusters`), providing
+`source_hub_id`, `hub_cluster_name`, `supported_workloads`, and
+optionally `allowed_tenants` and a display name. Returns the
+WorkloadCluster with conditions in `Unknown` state. See §4.3 for the
+request schema, validation rules, and duplicate detection.
+
+## IC-2: WorkloadCluster Get/List RPCs
+
+**Requirements:** FR-2, FR-3
+
+CPA retrieves registration status and conditions via
+`WorkloadClusters.Get` (by ID) or `WorkloadClusters.List` (with CEL
+filter and pagination) through gRPC or REST
+(`GET /api/fulfillment/v1/workload-clusters[/{id}]`). Conditions
+(`Available`, `HubReachable`) convey the current state. Only CPAs may
+call these RPCs. See §4.3 and §4.7.
+
+## IC-3: WorkloadCluster Update RPC
+
+**Requirements:** FR-1
+
+CPA modifies mutable fields (`allowed_tenants`, `supported_workloads`,
+labels) via `WorkloadClusters.Update`. Immutable fields
+(`source_hub_id`, `hub_cluster_name`) are rejected on update. See §4.3
+validation rules.
+
+## IC-4: WorkloadCluster Delete RPC
+
+**Requirements:** —
+
+CPA removes a WorkloadCluster via `WorkloadClusters.Delete`. Record is
+marked for deletion and archived after finalizers clear.
+
+## IC-5: CLI Commands
+
+**Requirements:** FR-1, FR-2
+
+- `osac workload-cluster create` — register a cluster.
+- `osac workload-cluster list` — list registered clusters with state.
+- `osac workload-cluster describe <id>` — show conditions, spec, and
+  metadata.
+- `osac workload-cluster update` — modify mutable fields.
+- `osac workload-cluster delete` — remove a registration.
+
+CLI commands map to the gRPC service. See §4.3 for the underlying API.
+
+## IC-6: UI Registration and Status Views
+
+**Requirements:** FR-1, FR-2, FR-3, FR-4
+
+- Registration form submits `WorkloadClusters.Create` with Hub
+  identity, cluster name, capabilities, and optional tenant
+  restrictions.
+- List view shows registered clusters with `Available` condition
+  status.
+- Detail view shows conditions with reasons and messages for
+  registration issues.
+- All views restricted to CPA role.
+
+The UI is built from generated protobuf TypeScript types after the proto
+is merged. No pre-existing UI mapping exists.
+
+## IC-7: MaaS Placement Query
+
+**Requirements:** FR-5
+
+MaaS placement discovers available capacity by querying
+`WorkloadClusters.List` with CEL filters for `supported_workloads`
+containing `"maas"`, `Available=True`, and tenant entitlement via
+`allowed_tenants`. See §4.3 Placement Filtering.
+
+FR-5 (tenant isolation) is additionally satisfied by the `allowed_tenants`
+entitlement model described in §4.7 — tenants cannot consume capacity
+from clusters that do not include them in the `allowed_tenants` list (or
+from clusters with a populated list that excludes them).
+
+# 6. Alternatives Considered
+
+## 6.1 Extend `Cluster` with an Origin Field
+
+Add an `origin` enum (`PROVISIONED`, `IMPORTED`) to `ClusterSpec` and
+make provisioning fields optional when origin is `IMPORTED`.
+
+**Pros:** Single resource type for all clusters; fewer concepts.
+**Cons:** Proto validation becomes conditional. Fulfillment controller
+must branch on origin to avoid creating ClusterOrder CRDs. Every consumer
+(operator, feedback controller, CLI, UI, metering) must handle both
+origins, creating regression risk in the mature CaaS flow. Status fields
+(MetalLB VIPs, HostedCluster references) are meaningless for registered
+clusters.
+**Rejection:** Provisioned and registered clusters have fundamentally
+different lifecycles, state models, and operator integrations. A separate
+resource provides cleaner separation with lower regression risk.
+
+## 6.2 Operator CRD for Registered Clusters
+
+Create a `WorkloadClusterOrder` CRD in the osac-operator, mirroring the
+ClusterOrder pattern.
+
+**Pros:** Consistent with existing Cluster → ClusterOrder pattern;
+operator has direct Hub access.
+**Cons:** Registration is not a provisioning operation — no AAP jobs,
+HostedClusters, or NodePools are needed. A CRD for a database
+registration adds unnecessary Kubernetes controller complexity. Signal
+round-trip from operator to fulfillment-service adds latency.
+**Rejection:** The fulfillment controller can validate the Hub cluster
+directly. A CRD is warranted only when Kubernetes-level reconciliation
+of child resources is needed.
+
+## 6.3 Exclusive WorkloadRole Enum
+
+Define a `WorkloadRole` enum with `MAAS_AI_INFERENCE` as the single
+accepted value, extensible to `VMAAS` in the future.
+
+**Pros:** Compile-time type safety; simple validation.
+**Cons:** Exclusive enum forces a choice: a cluster supports one role or
+requires multiple registrations. Adding VMaaS support would require
+either allowing multiple values (breaking the enum semantics) or creating
+duplicate WorkloadCluster records for the same physical cluster.
+**Rejection:** An additive `supported_workloads` list naturally
+represents clusters that support multiple workload types without schema
+changes or duplicate records.
+
+## 6.4 Anti-Corruption Adapter for OCM
+
+Introduce an internal abstraction layer between the fulfillment
+controller and OCM CRDs to isolate OSAC from OCM API changes.
+
+**Pros:** Decouples OSAC from OCM API surface; easier to swap Hub
+implementations.
+**Cons:** Premature abstraction for a single, stable, GA API. Adds
+indirection, testing surface, and maintenance cost without immediate
+benefit. The `ManagedCluster` v1 API is GA and stable.
+**Rejection:** Direct consumption follows existing OSAC patterns.
+Extraction triggers are documented in §4.1 for when an adapter becomes
+warranted.
+
+## 6.5 Do Nothing
+
+Rely on external tooling or manual database entries.
+
+**Pros:** No OSAC changes.
+**Cons:** No API visibility, no tenant entitlement, no MaaS placement
+integration, no observability.
+**Rejection:** PRD requires API, CLI, and UI visibility with tenant
+isolation.
+
+# 7. Observability and Monitoring
 
 **Metrics (Prometheus):**
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `osac_workload_cluster_import_total` | Counter | `result` (success, failure, duplicate) | Total import attempts |
-| `osac_workload_cluster_import_duration_seconds` | Histogram | — | Import operation latency (create to final state) |
-| `osac_workload_cluster_state` | Gauge | `state` | Current count of WorkloadClusters by state |
-| `osac_workload_cluster_hub_check_total` | Counter | `result` (success, failure) | Hub availability check attempts |
+| `osac_workload_cluster_registrations_total` | Counter | `result` (success, already_exists, invalid) | Total registration attempts |
+| `osac_workload_cluster_available` | Gauge | — | Count of WorkloadClusters with `Available=True` |
+| `osac_workload_cluster_unavailable` | Gauge | — | Count of WorkloadClusters with `Available=False` |
+| `osac_workload_cluster_hub_watch_errors_total` | Counter | `hub_id` | Hub watch connection errors |
+| `osac_workload_cluster_condition_transitions_total` | Counter | `condition`, `from_status`, `to_status` | Condition state changes |
 
-**Kubernetes Events:**
+**Events:** The fulfillment controller emits Kubernetes-style events
+through the OSAC eventing mechanism (not the osac-operator):
 
 | Event | Type | Reason | When |
 |---|---|---|---|
-| Import started | Normal | `ImportStarted` | WorkloadCluster created |
-| Import succeeded | Normal | `ImportSucceeded` | State → AVAILABLE |
-| Import failed | Warning | `ImportFailed` | State → FAILED |
-| Hub unreachable | Warning | `HubUnreachable` | State → UNAVAILABLE |
-| Hub recovered | Normal | `HubRecovered` | State UNAVAILABLE → AVAILABLE |
+| Registration created | Normal | `Registered` | WorkloadCluster created |
+| Cluster available | Normal | `Available` | `Available` condition → True |
+| Cluster unavailable | Warning | `Unavailable` | `Available` condition → False |
+| Hub watch reconnected | Normal | `HubReconnected` | Watch connection restored after failure |
+| Identity mismatch | Warning | `IdentityMismatch` | `hub_cluster_uid` changed unexpectedly |
 
-**Structured logging:** Import operations are logged at INFO level
-using only opaque OSAC resource IDs, the `workload_role` enum value,
-state transitions, and predefined reason codes. Hub connectivity
-failures are logged at WARN level with the allow-listed error category
-only — no tenant identifiers, ManagedCluster names, credentials,
-kubeconfig content, raw hub errors, stack traces, URLs, or internal
-addresses may appear in any log entry. See the logging redaction
-policy in §Security Considerations for the full allow-list/deny-list
-and required test coverage.
+**Structured logging:** See §4.5 for the complete logging redaction
+policy, allowed fields, denied fields, and required test coverage.
 
-### Risks and Mitigations
+# 8. Impact and Compatibility
 
-| Risk | Mitigation |
-|---|---|
-| Hub API latency slows import validation | Controller runs asynchronously; Create RPC returns immediately with IMPORTING state. Hub validation is non-blocking. |
-| Hub cluster removed while OSAC workloads are active | UNAVAILABLE state signals to MaaS placement that the cluster should not receive new workloads. Existing workload handling is a MaaS concern, not a WorkloadCluster concern. |
-| Large number of imported clusters overwhelms controller | Controller uses standard reconciler polling with configurable interval. Rate limiting can be added if needed. |
-| ACM API version changes break hub queries | The `cluster.open-cluster-management.io/v1` ManagedCluster API is GA and stable. Pin the API version in the controller client. |
+**Backward compatibility:** This is a new API resource with no existing
+consumers. No breaking changes to existing resources or services.
 
-### Extensibility / Future-Proofing
+**Database migration:** New numbered migration creates the
+`workload_clusters` and `archived_workload_clusters` tables. Existing
+tables and data are not affected. Migration is additive.
 
-The `WorkloadRole` enum on `WorkloadClusterSpec` provides the primary
-extensibility point for future workload types:
+**Upgrade:** The new tables are created by the migration. No data
+backfill.
 
-- **Adding a new role (e.g., VMaaS):** A future increment adds
-  `WORKLOAD_ROLE_VMAAS = 2` to the `WorkloadRole` proto enum and
-  updates the Create handler's validation allow-list. No database
-  migration, schema change, or proto field addition is required. The
-  existing `workload_role` column in the `data` JSONB is already
-  persisted — only the accepted-value check changes.
-- **Role-specific validation:** Each role may define its own hub
-  validation requirements (e.g., VMaaS might require different
-  ManagedCluster conditions). The fulfillment controller dispatches
-  validation to a role-specific handler. This increment implements
-  only the `MAAS_AI_INFERENCE` handler.
-- **Role-specific capabilities:** If future roles need additional
-  spec fields (e.g., GPU profiles for VMaaS), these are added as new
-  proto fields on `WorkloadClusterSpec` with field numbers above the
-  current range. Existing clients that do not set the new fields
-  continue to work — proto3 treats absent fields as their default
-  values.
-- **Versioning behavior:** The `v1` WorkloadCluster API is
-  additive-only. New roles and fields are backwards-compatible
-  additions. If a future change requires non-additive modification
-  (removing a role, changing semantics), a `v2` API version is
-  introduced per OSAC API versioning policy.
+**Downgrade:** Requires deleting all WorkloadCluster records before
+reverting the migration. No impact on existing `clusters` or
+`cluster_orders` resources.
 
-### Drawbacks
+**Version skew:** No cross-component version dependency. The
+fulfillment-service hosts both the WorkloadCluster service and
+controller. If MaaS components begin consuming the WorkloadCluster API,
+version skew is handled via API versioning (the `v1` API is
+additive-only).
 
-Introducing a separate `WorkloadCluster` resource type adds a new
-concept to the OSAC API alongside the existing `Cluster` resource. Users
-must understand the distinction: `Cluster` is for CaaS-provisioned
-clusters, `WorkloadCluster` is for imported clusters used by MaaS.
+**Service gate:** The WorkloadCluster gRPC service is registered
+conditionally behind `--enable-maas` per the OSAC-3046 pattern. When
+MaaS is disabled, all RPCs return `codes.Unavailable` with a descriptive
+message. Existing records remain in the database but are not queryable.
+Re-enabling MaaS restores access.
 
-This trade-off is preferable to overloading `Cluster` with conditional
-behavior based on an origin field, which would require every existing
-consumer (operator, feedback controller, UI, CLI, metering) to branch
-on cluster type and would risk regressions in the mature CaaS
-provisioning flow.
+# 9. Baseline Resolutions and Remaining Deltas
 
-## Alternatives (Not Implemented)
+This section documents where the baselined architectural decisions resolve
+or supersede PRD open questions, and identifies remaining deltas between
+the PRD and this design.
 
-### Alternative 1: Extend `Cluster` with an Origin Field
+## 9.1 PRD Open Question 1: Tenant Allocation — RESOLVED
 
-Add an `origin` enum (`PROVISIONED`, `IMPORTED`) to `ClusterSpec` and
-make provisioning-specific fields (`template`, `node_sets`) optional
-when origin is `IMPORTED`.
+**PRD question:** "Are imported workload clusters shared provider
+capacity available to multiple tenants, or assigned to one tenant?"
 
-**Pros:**
-- Single resource type for all clusters.
-- Existing `Clusters` service and UI views might need fewer changes.
+**Resolution (Baseline Decision 1):** WorkloadCluster is a
+provider-level resource, not scoped to any tenant. Registration is
+separate from entitlement. The `allowed_tenants` field controls which
+tenants may consume capacity:
+- Empty/unset: shared pool available to all tenants.
+- Populated: restricted to listed tenants.
 
-**Cons:**
-- Proto validation rules become conditional, increasing complexity.
-- The fulfillment controller must branch on origin to avoid creating
-  ClusterOrder CRDs for imported clusters.
-- Every consumer (operator, feedback controller, CLI, UI, metering)
-  must handle both origins, creating regression risk in the CaaS flow.
-- Status fields (MetalLB VIPs, HostedCluster references, provisioning
-  jobs) are meaningless for imported clusters, confusing API consumers.
+This replaces the previous design's tenant-scoped ownership model and
+fully resolves the PRD open question.
 
-**Rejection reason:** The lifecycle, state machine, and operator
-integration of provisioned vs. imported clusters are fundamentally
-different. A separate resource type provides cleaner separation with
-lower regression risk.
+## 9.2 PRD Scope Delta: VMaaS / Future Workloads
 
-### Alternative 2: New Operator CRD for Imported Clusters
+**PRD Out of Scope:** "Using imported clusters for VMaaS, CaaS, or BMaaS
+workloads."
 
-Create a `WorkloadClusterOrder` CRD in the osac-operator, mirroring
-the ClusterOrder pattern.
+**Design position (Baseline Decision 4):** The `supported_workloads`
+capability list enables future VMaaS coexistence without schema migration.
+This increment validates only `"maas"` — VMaaS support requires a future
+increment to add `"vmaas"` to the allow-list and implement VMaaS-specific
+validation. The schema accommodates this; the functionality does not.
+This is a deliberate design-for-extensibility, not a scope expansion.
 
-**Pros:**
-- Consistent with the existing Cluster → ClusterOrder pattern.
-- Operator has direct hub access for validation.
+## 9.3 PRD Scope Delta: Registration vs. Import Terminology
 
-**Cons:**
-- Import is a registration operation, not a provisioning operation.
-  No AAP jobs, HostedClusters, or NodePools are needed.
-- Adding a CRD for a database registration operation introduces
-  unnecessary Kubernetes controller complexity.
-- The operator would need to Signal back to the fulfillment-service
-  for a simple validation, adding round-trip latency.
+**PRD language:** "Import clusters" / "imported clusters."
 
-**Rejection reason:** The fulfillment controller can validate the hub
-cluster directly, keeping the import path simpler. A CRD is warranted
-only when Kubernetes-level reconciliation (e.g., creating child
-resources) is needed, which is not the case for import.
+**Design position (Baseline Decision 5):** This design uses "register"
+semantics to reflect that the operation records an externally prepared
+cluster rather than performing a provisioning or data-import action.
+The API uses standard CRUD semantics (`Create`), consistent with
+Kubernetes and OSAC patterns where creating a record does not imply
+creating the thing it represents. Future CaaS automatic registration
+uses the same `Create` RPC. This is a terminology clarification, not a
+functional change.
 
-### Alternative 3: Do Nothing
-
-Rely on external tooling or manual database entries to register
-imported clusters.
-
-**Pros:** No OSAC changes needed.
-
-**Cons:** No API visibility, no tenant isolation, no integration with
-MaaS workload flows, no observability. Violates the PRD requirements.
-
-**Rejection reason:** The PRD explicitly requires API, CLI, and UI
-visibility for imported clusters with tenant isolation.
-
-## Open Questions
-
-### 9.1 Tenant Allocation Model
-
-Should imported WorkloadClusters serve AI workloads from the owning
-tenant only (single-tenant) or from multiple tenants (multi-tenant)?
-
-- **Owner:** OSAC-MaaS team
-- **Impact:** Affects OPA policies, MaaS placement queries, and
-  whether a `shared` flag or tenant-assignment mechanism is needed on
-  the WorkloadCluster resource. The current design defaults to
-  single-tenant ownership. Multi-tenant sharing can be added via a
-  future schema extension without breaking changes.
-
-### 9.2 Jira Definition of Done — Disconnect
+## 9.4 Jira Definition of Done — Disconnect
 
 The Jira OSAC-6488 Definition of Done includes a disconnect capability
-that was removed from the PRD during review (Locked D5). Should the
-Jira DoD be updated to match the merged PRD?
+removed from the PRD during review. Disconnect remains out of scope per
+the merged PRD. The DoD should be updated to match. This is a Jira
+hygiene action with no impact on this design.
 
 - **Owner:** Eran Cohen (Feature owner)
-- **Impact:** No impact on this design (disconnect is excluded per the
-  merged PRD). The DoD update is a Jira hygiene action.
 
-### 9.3 MaaS Placement Integration
+# 10. Test Plan
 
-How do MaaS AI workload flows discover and select WorkloadClusters for
-placement? Does MaaS query the WorkloadClusters service directly, or
-does it delegate to ACM Placement resources?
-
-- **Owner:** OSAC-MaaS team
-- **Impact:** Affects whether the WorkloadCluster service needs
-  additional query filters or labels for placement. The current design
-  exposes a standard List RPC with CEL filter support, which is
-  sufficient for direct queries. ACM Placement integration would be a
-  separate enhancement.
-
-## Test Plan
-
-### Requirement Traceability
-
-Test scenarios below reference functional requirement IDs derived from
-the [PRD](prd.md) In Scope items:
+## 10.1 Requirement Traceability
 
 | ID | PRD In Scope Item | Summary |
 |---|---|---|
-| FR-1 | Import clusters through OSAC UI, CLI, and API | Create/import a hub-registered cluster as a WorkloadCluster |
-| FR-2 | See import outcome through the UI, CLI, and API | View import state, conditions, and metadata |
-| FR-3 | Imported details visible only to Cloud Provider Admins | Authorization and tenant-scoped visibility |
-| FR-4 | Import failures show the cause; no recovery action required | Failure handling, duplicate detection, and error reporting |
-| FR-5 | AI workloads can use workload clusters preserving tenant isolation | Tenant isolation enforced in database queries and OPA policies |
+| FR-1 | Register clusters through OSAC UI, CLI, and API | Create a WorkloadCluster referencing a Hub-managed cluster |
+| FR-2 | See registration outcome through UI, CLI, and API | View conditions and metadata |
+| FR-3 | Registered cluster details visible only to CPAs | CPA-only authorization |
+| FR-4 | Registration issues show the cause; no recovery action required | Condition-based failure reporting |
+| FR-5 | AI workloads can use workload clusters preserving tenant isolation | `allowed_tenants` entitlement and MaaS placement filtering |
 
-### Unit Tests
+## 10.2 Unit Tests
 
 **Location:** `fulfillment-service/internal/servers/` (Ginkgo/Gomega)
 
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| Create with valid hub_cluster_name and MAAS_AI_INFERENCE role | FR-1 | Returns WorkloadCluster with state=IMPORTING |
-| Create with empty hub_cluster_name | FR-1 | Returns InvalidArgument |
-| Create with unsupported workload_role (e.g., UNSPECIFIED) | FR-1 | Returns InvalidArgument |
-| Create with duplicate name in same tenant | FR-1, FR-4 | Returns AlreadyExists |
-| Create with duplicate hub_cluster_name in same tenant | FR-1, FR-4 | Returns AlreadyExists with descriptive message |
-| Concurrent duplicate hub_cluster_name imports | FR-4 | Exactly one succeeds; other returns AlreadyExists via DB constraint |
-| Create with same hub_cluster_name in different tenant | FR-1 | Succeeds (tenants are isolated) |
-| List returns only tenant-scoped results | FR-2, FR-3 | Only WorkloadClusters in the caller's tenant are returned |
-| Get by ID | FR-2 | Returns the WorkloadCluster with current state and conditions |
-| Update metadata.labels | FR-1 | Labels updated, version incremented |
-| Update spec.hub_cluster_name | FR-1 | Returns InvalidArgument (immutable) |
-| Delete a WorkloadCluster | — | Record marked for deletion, archived after finalizers clear |
-| Signal triggers reconciliation | — | Signal RPC accepted, returns empty response |
-| Private fields not in public API | FR-3 | `hub_cluster_id` absent from public proto response |
-| MaaS disabled | — | All RPCs return Unavailable with descriptive message |
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| U1 | Create with valid source_hub_id, hub_cluster_name, supported_workloads=["maas"] | FR-1 | Returns WorkloadCluster with conditions Unknown |
+| U2 | Create with empty hub_cluster_name | FR-1 | Returns InvalidArgument |
+| U3 | Create with unknown supported_workloads value | FR-1 | Returns InvalidArgument listing accepted values |
+| U4 | Create with source_hub_id not matching configured Hub | FR-1 | Returns InvalidArgument |
+| U5 | Create with duplicate (source_hub_id, hub_cluster_name) — application check | FR-4 | Returns AlreadyExists with descriptive message |
+| U6 | Concurrent duplicate (source_hub_id, hub_cluster_name) — DB constraint | FR-4 | Exactly one succeeds; other returns AlreadyExists |
+| U7 | Create with same hub_cluster_name but different source_hub_id | FR-1 | Succeeds (different physical identity) |
+| U8 | Create with allowed_tenants=[] | FR-5 | Succeeds; cluster available to all tenants |
+| U9 | Create with allowed_tenants=["tenant-a"] | FR-5 | Succeeds; cluster restricted to tenant-a |
+| U10 | Update allowed_tenants on existing cluster | FR-5 | Allowed_tenants updated, version incremented |
+| U11 | Update source_hub_id (immutable) | FR-1 | Returns InvalidArgument |
+| U12 | Update hub_cluster_name (immutable) | FR-1 | Returns InvalidArgument |
+| U13 | List returns only WorkloadClusters (no tenant filter) | FR-2, FR-3 | All clusters returned to CPA |
+| U14 | Get by ID | FR-2 | Returns WorkloadCluster with current conditions |
+| U15 | Delete a WorkloadCluster | — | Record marked for deletion |
+| U16 | Private fields not in public API | FR-3 | `hub_cluster_uid` absent from public response |
+| U17 | MaaS service disabled | — | All RPCs return Unavailable |
 
-### Integration Tests
+## 10.3 Integration Tests
 
 **Location:** `fulfillment-service/it/` (deployed service + database)
 
-| Scenario | Requirement | Expected Behavior |
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| I1 | Register end-to-end with mocked Hub (ManagedCluster exists) | FR-1, FR-2 | Create → controller watches → Available=True |
+| I2 | Register with non-existent ManagedCluster | FR-4 | Available=False, reason ManagedClusterNotFound |
+| I3 | Register with unaccepted ManagedCluster | FR-4 | Available=False, reason ManagedClusterNotAccepted |
+| I4 | Register with unreachable Hub | FR-4 | Available=False, HubReachable=False |
+| I5 | Hub watch reconnect after transient failure | — | HubReachable transitions False→True; Available updates |
+| I6 | ManagedCluster removed after registration | — | Available=False, reason ManagedClusterRemoved |
+| I7 | ManagedCluster created after registration (delayed availability) | FR-4 | Available transitions Unknown→True |
+| I8 | Cluster identity mismatch (UID changes) | — | Available=False, reason ClusterIdentityMismatch |
+| I9 | Duplicate (source_hub_id, hub_cluster_name) via DB constraint | FR-4 | One succeeds, other returns AlreadyExists |
+| I10 | Placement filter: supported_workloads, Available, allowed_tenants | FR-5 | Only matching clusters returned |
+
+## 10.4 API Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| A1 | REST POST /api/fulfillment/v1/workload-clusters | FR-1 | Creates WorkloadCluster |
+| A2 | REST GET /api/fulfillment/v1/workload-clusters | FR-2 | Lists with filter/pagination |
+| A3 | REST GET /api/fulfillment/v1/workload-clusters/{id} | FR-2 | Returns single WorkloadCluster |
+| A4 | gRPC WorkloadClusters.Create | FR-1 | Creates WorkloadCluster |
+| A5 | Public API excludes private fields | FR-3 | hub_cluster_uid not present |
+
+## 10.5 UI Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| V1 | Registration form submits Create RPC | FR-1 | UI sends Create with Hub identity and capabilities |
+| V2 | Registration outcome displayed | FR-2 | Conditions rendered in detail view |
+| V3 | Condition reason displayed for issues | FR-4 | Available=False reason and message shown |
+| V4 | CPA-only view enforcement | FR-3 | Non-CPA roles cannot access WorkloadCluster views |
+
+## 10.6 Security and Isolation Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| S1 | CPA can create WorkloadCluster | FR-1 | Create succeeds |
+| S2 | CPA can list WorkloadClusters | FR-2, FR-3 | List succeeds |
+| S3 | Tenant Admin cannot create WorkloadCluster | FR-3 | PermissionDenied |
+| S4 | Tenant Admin cannot list WorkloadClusters | FR-3 | PermissionDenied |
+| S5 | Tenant User cannot list WorkloadClusters | FR-3 | PermissionDenied |
+| S6 | Tenant User cannot get WorkloadCluster by ID | FR-3 | PermissionDenied |
+| S7 | Unauthenticated request rejected | FR-3 | Unauthenticated |
+| S8 | MaaS placement respects allowed_tenants (populated) | FR-5 | Unlisted tenant's placement excludes cluster |
+| S9 | MaaS placement with allowed_tenants empty | FR-5 | All tenants' placement includes cluster |
+
+## 10.7 Capability and Placement Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| C1 | Register with supported_workloads=["maas"] | FR-1 | Succeeds; cluster eligible for MaaS placement |
+| C2 | Register with supported_workloads=["vmaas"] (not yet allowed) | FR-1 | InvalidArgument — "vmaas" not in allow-list |
+| C3 | Placement filters by supported_workloads | FR-5 | Only clusters with "maas" in list returned |
+| C4 | Placement filters by Available=True | FR-5 | Unavailable clusters excluded |
+| C5 | Placement filters by allowed_tenants entitlement | FR-5 | Only entitled tenants' queries match |
+
+## 10.8 Hub Identity and Watch Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| H1 | source_hub_id validated against configured Hub | FR-1 | Mismatched hub_id returns InvalidArgument |
+| H2 | Controller watch receives ManagedCluster add event | FR-2 | Corresponding WorkloadCluster conditions update |
+| H3 | Controller watch receives ManagedCluster delete event | — | Available=False, reason ManagedClusterRemoved |
+| H4 | Watch relist after reconnect | — | All WorkloadCluster conditions reconciled |
+| H5 | hub_cluster_uid immutability enforced | — | UID change sets Available=False |
+
+## 10.9 Credential Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| K1 | hub-kubeconfig Secret present and valid | — | Controller starts, watch established |
+| K2 | hub-kubeconfig Secret missing | — | Controller logs error, HubReachable=False on all clusters |
+| K3 | hub-kubeconfig Secret with invalid credentials | — | HubReachable=False, condition message describes auth failure |
+
+## 10.10 Direct OCM Compatibility Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| O1 | ManagedCluster v1 API available on Hub | — | Watch established, conditions reconcile |
+| O2 | ManagedCluster has HubAcceptedManagedCluster=True | FR-1 | Available=True |
+| O3 | ManagedCluster has id.k8s.io ClusterClaim | — | hub_cluster_uid populated |
+| O4 | ManagedCluster lacks id.k8s.io claim | — | hub_cluster_uid empty; conditions still reconcile |
+
+## 10.11 External Registration and Scope Tests
+
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| R1 | Register externally prepared cluster | FR-1 | WorkloadCluster created; no provisioning triggered |
+| R2 | No CRD created on target cluster or operator | FR-1 | Verify no CRD side effects |
+| R3 | Site/multi-cluster aggregation not supported | — | No parent resource API exists; document confirms 1:1 mapping |
+
+## 10.12 Logging Redaction Tests
+
+| # | Scenario | Expected Behavior |
 |---|---|---|
-| Import end-to-end with mocked hub | FR-1, FR-2 | Create → controller validates → state transitions to AVAILABLE |
-| Import with non-existent hub cluster | FR-4 | State transitions to FAILED with `HubClusterNotFound` reason |
-| Import with unaccepted hub cluster | FR-4 | State transitions to FAILED with `HubClusterNotAccepted` reason |
-| Import with unreachable hub | FR-4 | State transitions to FAILED with `HubUnreachable` reason |
-| Hub availability monitoring | — | AVAILABLE → UNAVAILABLE when hub cluster becomes unreachable |
-| Hub recovery monitoring | — | UNAVAILABLE → AVAILABLE when hub cluster recovers |
-| Duplicate hub cluster detection | FR-4 | Second import of same hub cluster returns AlreadyExists |
-| Tenant isolation in database queries | FR-3, FR-5 | Tenant A cannot see Tenant B's WorkloadClusters |
+| L1 | Registration success — log contains only allowed fields | workload_cluster_id, supported_workloads, condition, component, operation, request_id; no denied fields |
+| L2 | Registration failure — log redacts denied fields | Reason code present; no ManagedCluster name, Hub URL, credentials, stack trace |
+| L3 | Hub watch error — log redacts denied fields | Error category present; no internal addresses, bearer tokens |
 
-### API Tests
+## 10.13 Failure Tests
 
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| REST POST /api/fulfillment/v1/workload-clusters | FR-1 | Creates WorkloadCluster via REST gateway |
-| REST GET /api/fulfillment/v1/workload-clusters | FR-2 | Lists WorkloadClusters with filter/pagination |
-| REST GET /api/fulfillment/v1/workload-clusters/{id} | FR-2 | Returns single WorkloadCluster |
-| gRPC WorkloadClusters.Create | FR-1 | Creates WorkloadCluster via gRPC |
-| Public API excludes private fields | FR-3 | hub_cluster_id not present in public responses |
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| F1 | Hub unreachable during registration | FR-4 | Available=False, HubReachable=False |
+| F2 | Hub recovers after outage | — | Available condition updates via watch |
+| F3 | Controller restart mid-reconciliation | FR-4 | Resumes from database state; no duplicate records |
+| F4 | Database unavailable during Create | FR-4 | Returns Internal error; no partial state |
+| F5 | Concurrent duplicate registrations (DB constraint) | FR-4 | Exactly one succeeds |
 
-### UI Tests
-
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| Import form submits Create RPC | FR-1 | UI sends WorkloadClusters.Create with hub_cluster_name |
-| Import outcome displayed | FR-2 | State and conditions rendered in detail view |
-| Failure cause displayed | FR-4 | Failed condition reason and message shown to admin |
-| WorkloadCluster list filtered by tenant | FR-3 | Only admin's tenant's clusters visible |
-
-### Security and Isolation Tests
-
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| Cloud Provider Admin can create WorkloadCluster | FR-1 | Create succeeds with proper JWT |
-| Cloud Provider Admin can list (discover) WorkloadClusters | FR-2, FR-3 | List succeeds, returns only own tenant's clusters |
-| Tenant Admin cannot create WorkloadCluster | FR-3 | Create returns PermissionDenied |
-| Tenant Admin cannot list (discover) WorkloadClusters | FR-3 | List returns PermissionDenied |
-| Tenant User cannot list WorkloadClusters | FR-3 | List returns PermissionDenied |
-| Tenant User cannot get WorkloadCluster by ID | FR-3 | Get returns PermissionDenied |
-| Cross-tenant access denied | FR-3, FR-5 | Admin in Tenant A cannot read Tenant B's WorkloadClusters |
-| Unauthenticated request rejected | FR-3 | Returns Unauthenticated |
-
-### Failure Tests
-
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| Hub unreachable during import | FR-4 | State=FAILED, descriptive error message |
-| Hub unreachable after import | — | State transitions AVAILABLE → UNAVAILABLE |
-| Hub recovers after outage | — | State transitions UNAVAILABLE → AVAILABLE |
-| Controller restart mid-import | FR-4 | Resumes from last persisted state, no duplicate records |
-| Database unavailable during Create | FR-4 | Returns Internal error, no partial state |
-| Concurrent duplicate imports (DB constraint) | FR-4 | Exactly one succeeds, others return AlreadyExists from DB constraint violation |
-
-### E2E Tests
+## 10.14 E2E Tests
 
 **Location:** `tests/e2e/` (pytest via osac-test-infra)
 
-| Scenario | Requirement | Expected Behavior |
-|---|---|---|
-| Import hub-registered cluster via API | FR-1 | WorkloadCluster created with state=AVAILABLE |
-| Verify import outcome via CLI (`osac workload-cluster list`) | FR-2 | Cluster appears in list output |
-| Verify import outcome via CLI (`osac workload-cluster describe`) | FR-2 | Cluster details shown with state and conditions |
-| Import non-existent cluster | FR-4 | Returns FAILED with descriptive cause |
-| Verify tenant isolation | FR-3, FR-5 | Tenant Admin and Tenant User cannot see WorkloadCluster |
-| Import same cluster twice | FR-4 | Second attempt returns AlreadyExists |
-| Delete imported cluster | — | WorkloadCluster removed from list |
-| Verify Tenant Admin cannot discover clusters via CLI | FR-3 | `osac workload-cluster list` returns PermissionDenied |
+| # | Scenario | Requirement | Expected Behavior |
+|---|---|---|---|
+| E1 | Register Hub-managed cluster via API | FR-1 | WorkloadCluster with Available=True |
+| E2 | Verify outcome via CLI `osac workload-cluster list` | FR-2 | Cluster in list with Available status |
+| E3 | Verify outcome via CLI `osac workload-cluster describe` | FR-2 | Conditions, spec, metadata shown |
+| E4 | Register non-existent ManagedCluster | FR-4 | Available=False with descriptive reason |
+| E5 | Verify CPA-only access | FR-3 | Tenant roles get PermissionDenied |
+| E6 | Register same cluster twice | FR-4 | AlreadyExists |
+| E7 | Delete registered cluster | — | Removed from list |
+| E8 | Placement query with capability filter | FR-5 | Only "maas" clusters returned |
 
-### Logging Redaction Tests
+**E2E infrastructure requirement:** An ACM Hub with at least one
+registered ManagedCluster in the test environment.
 
-| Scenario | Expected Behavior |
-|---|---|
-| Import success — log output contains only allowed fields | Log entries include `workload_cluster_id`, `workload_role`, state transition, latency; no tenant ID, no ManagedCluster name, no hub URL |
-| Import failure — log output redacts denied fields | Log entries include `workload_cluster_id`, reason code; no raw hub error body, no stack trace, no credentials, no kubeconfig content |
-| Hub health check — log output redacts denied fields | Log entries include resource ID, error category; no internal addresses, no bearer tokens |
+# 11. Graduation Criteria
 
-**Test infrastructure requirement:** E2E tests require an ACM hub with
-at least one registered ManagedCluster in the test environment.
+## Dev Preview → Tech Preview
 
-## Graduation Criteria
+- All unit, integration, and API tests pass in CI.
+- E2E registration-and-verify scenario executes against a live ACM Hub.
+- Documentation (API reference, CLI help, UI tooltips) published.
+- At least one CPA has registered a cluster in staging and confirmed the
+  workflow (register, view conditions, delete).
 
-### Dev Preview → Tech Preview
+## Tech Preview → GA
 
-- All unit, integration, and API tests in the test plan pass in CI.
-- E2E import-and-verify scenario executes against a live ACM hub in
-  the QE environment.
-- Documentation (API reference, CLI help text, UI tooltips) is
-  published.
-- At least one cloud provider has imported a cluster in a staging
-  environment and confirmed the workflow (import, view outcome,
-  delete).
-
-### Tech Preview → GA
-
-- Zero P1/P2 open bugs against the WorkloadCluster resource for two
-  consecutive sprints.
-- Hub availability monitoring (AVAILABLE ↔ UNAVAILABLE transitions)
-  validated in a long-running soak test (≥ 72 hours).
+- Zero P1/P2 open bugs for two consecutive sprints.
+- Hub watch reconnection validated in long-running soak test (>= 72 hours).
 - Security review completed — OPA policies audited, logging redaction
-  policy verified by QE, no denied fields found in collected logs.
-- Tenant isolation penetration test passes — cross-tenant access
-  denied for all RPCs.
-- Rollout to at least one production-like environment with the
-  `services.maas.enabled` gate verified for both enable and disable
-  paths.
+  verified, no denied fields in collected logs.
+- `allowed_tenants` entitlement validated — unauthorized tenant placement
+  denied.
+- Service gate (`--enable-maas`) verified for enable and disable paths.
 
-## Upgrade / Downgrade Strategy
+# 12. Upgrade / Downgrade Strategy
 
 This is a new API with no upgrade impact on existing resources.
 
-**Upgrade:** The new `workload_clusters` database table is created by a
-new numbered migration. Existing tables and data are not affected.
+**Upgrade:** New numbered migration creates `workload_clusters` and
+`archived_workload_clusters` tables. Existing tables and data are not
+affected.
 
-**Downgrade:** Requires deleting all WorkloadCluster instances before
-reverting the migration. The `archived_workload_clusters` table and
-active records must be dropped. No impact on existing `clusters` or
+**Downgrade:** Requires deleting all WorkloadCluster records before
+reverting the migration. No impact on existing `clusters` or
 `cluster_orders` resources.
 
-## Version Skew Strategy
+# 13. Version Skew Strategy
 
-No version skew concerns. This is a new resource type with no existing
-consumers. The fulfillment-service (which hosts the WorkloadCluster
-service and controller) is deployed as a single unit; there is no
-cross-component version dependency for this resource.
+No version skew concerns. This is a new resource type. The
+fulfillment-service hosts both the service and controller as a single
+deployment unit.
 
-If MaaS components begin consuming the WorkloadCluster API, version
-skew between the fulfillment-service and MaaS components should be
-handled via API versioning (the `v1` API is additive-only).
+If MaaS components begin consuming the WorkloadCluster API, version skew
+is handled via API versioning (the `v1` API is additive-only).
 
-## Support Procedures
+# 14. Support Procedures
 
-**Detecting failure modes:**
+**Detecting issues:**
 
-- Import stuck in IMPORTING state: check fulfillment controller logs
-  for hub connectivity errors. Metric:
-  `osac_workload_cluster_hub_check_total{result="failure"}` increasing.
-- Clusters in UNAVAILABLE state: check
-  `osac_workload_cluster_state{state="UNAVAILABLE"}` gauge. Inspect
-  the `HubReachable` condition for the specific failure reason.
-- Import failures: check `osac_workload_cluster_import_total{result=
-  "failure"}` counter. Inspect the `Failed` condition on the
-  WorkloadCluster for the cause.
+- Cluster stuck with `Available=Unknown`: fulfillment controller may not
+  be running or Hub watch is not established. Check controller logs and
+  `osac_workload_cluster_hub_watch_errors_total` metric.
+- Clusters with `Available=False`: inspect the `Available` condition's
+  `reason` and `message`. Common causes: `ManagedClusterNotFound` (wrong
+  name), `HubUnreachable` (connectivity), `ManagedClusterNotAccepted`
+  (Hub-side acceptance).
+- Hub watch errors increasing: check
+  `osac_workload_cluster_hub_watch_errors_total`. May indicate Hub
+  credential rotation needed or network issue.
 
-**Disabling the feature:**
-
-Set `services.maas.enabled: false` in the Helm values and run
-`helm upgrade`. This unregisters the WorkloadCluster gRPC service and
-REST endpoints. Existing WorkloadCluster records remain in the database
-but are not queryable. Re-enabling MaaS restores access to existing
-records.
+**Disabling the feature:** Set `services.maas.enabled: false` in Helm
+values and run `helm upgrade`. This unregisters the WorkloadCluster gRPC
+service. Existing records remain but are not queryable. Re-enabling
+restores access.
 
 **Consequences of disabling:**
-- MaaS AI workload flows that depend on WorkloadClusters will fail to
-  discover available capacity.
-- Existing workloads already placed on imported clusters are not
-  affected (placement is a separate concern).
+- MaaS placement cannot discover WorkloadCluster capacity.
+- Existing placed workloads are not affected (placement is a separate
+  concern).
 - No impact on CaaS, VMaaS, or BMaaS services.
 
-**Recovery:** The WorkloadCluster controller is stateless (all state is
-in the database). Restarting the fulfillment-service controller process
-resumes normal operation. No manual intervention is needed for recovery
-from controller crashes.
+**Recovery:** The controller is stateless — all state is in the database.
+Restarting the fulfillment-service resumes normal operation including
+Hub watch re-establishment.
 
-## Infrastructure Needed
+# 15. Infrastructure Needed
 
-- **E2E test environment:** An ACM hub with at least one registered
-  ManagedCluster for E2E testing of the import flow. This may require
-  a dedicated test hub or integration with an existing ACM test
-  environment.
-- No new repositories, subprojects, or CI infrastructure changes are
-  needed.
+- **E2E test environment:** An ACM Hub with at least one registered
+  ManagedCluster. May require a dedicated test Hub or integration with an
+  existing ACM test environment.
+- No new repositories, subprojects, or CI infrastructure changes.
+
+# 16. Risks and Mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Hub cluster removed while OSAC workloads are active | `Available=False` with reason `ManagedClusterRemoved` signals MaaS placement to stop scheduling new workloads. Existing workload handling is a MaaS concern. |
+| ACM API version changes break Hub watch | The `cluster.open-cluster-management.io/v1` ManagedCluster API is GA and stable. Client pins the API version. Extraction triggers documented in §4.1. |
+| SharedInformer memory for large Hub | Scales linearly with ManagedCluster count. Acceptable for expected scale (~500 clusters). Monitor and evaluate if scale exceeds assumptions. |
+| Hub credential rotation | hub-kubeconfig Secret update requires fulfillment-service restart to pick up new credentials. Document in operational runbook. |
 
 ---
 
 ## Provenance
 
-Revised: revise @ design 0.9.0 - 155e7d6, workspace design/OSAC-6488 @ 20a4993
-Phases: draft, revise
+Revised: revise @ design 0.9.0 - 155e7d6, workspace design/OSAC-6488 @ 6a94ad1
+Reviewed: respond @ design/OSAC-6488 — independent architecture review
+Phases: draft, revise, revise, respond
+Sources: PRD (prd.md), PR #394 review feedback, baselined architectural decisions
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"20a4993","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":1,"main_ref":"main","phases":["draft","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"6a94ad1","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
