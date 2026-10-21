@@ -299,7 +299,26 @@ it as `hub_cluster_uid` in the status JSONB. This UID is immutable after
 first write — if the controller detects a different UID for the same
 `hub_cluster_name`, it sets `Available=False` with reason
 `ClusterIdentityMismatch`, indicating the name now points to a different
-physical cluster and administrative action is required.
+physical cluster.
+
+**Recovery from identity mismatch:** Because the UID is immutable and
+Delete is deferred, self-service replacement is blocked in this
+increment. The CPA cannot create a new WorkloadCluster with the same
+`(source_hub_id, hub_cluster_name)` because the uniqueness constraint
+rejects it while the existing non-deleted record holds the slot. The CPA
+also cannot update `hub_cluster_uid` because it is a controller-managed
+status field. The authorized recovery paths are:
+
+1. **Platform operator database cleanup:** The platform operator
+   soft-deletes the mismatched WorkloadCluster record (sets
+   `deletion_timestamp` and archives the row), releasing the uniqueness
+   slot. The CPA then creates a new registration with the same Hub
+   identity, and the controller populates the new UID.
+2. **Wait for disconnect:** When the disconnect increment is
+   implemented, the CPA will be able to delete the mismatched
+   registration through the API and re-register.
+
+This is an honest limitation of deferring Delete — see §16 Drawbacks.
 
 ## 4.3 API Changes
 
@@ -373,8 +392,14 @@ message WorkloadClusterCondition {
   string reason = 3;
   // Human-readable message.
   string message = 4;
-  // Timestamp of last status change.
+  // Timestamp of last status/reason change. Updated only when status
+  // or reason actually transitions to a different value.
   google.protobuf.Timestamp last_transition_time = 5;
+  // Timestamp of last controller observation confirming this condition.
+  // Updated on every re-validation cycle (every 5 minutes) and on
+  // every reconciliation event, regardless of whether status changed.
+  // Consumers use this for freshness checks (see §4.6).
+  google.protobuf.Timestamp last_observed_time = 6;
 }
 ```
 
@@ -554,9 +579,11 @@ JWT authentication and OPA authorization.
 - `workload_cluster:create` — Cloud Provider Admin
 - `workload_cluster:update` — Cloud Provider Admin
 
-Delete is deferred (see IC-4). No other role has any WorkloadCluster
-permission. Tenant workloads consume capacity indirectly through MaaS
-placement.
+Delete is deferred (see IC-4). The `workload_cluster:delete` permission
+is intentionally absent from the OPA policy; all Delete requests receive
+`PermissionDenied` at the authorization layer regardless of caller role.
+No other role has any WorkloadCluster permission. Tenant workloads
+consume capacity indirectly through MaaS placement.
 
 **Input validation:**
 - `hub_cluster_name` validated as DNS label (RFC 1123).
@@ -580,17 +607,23 @@ authenticates to the Hub using a kubeconfig mounted from the
   performed.
 - **Missing or invalid credential:** If the Secret is missing or its
   contents fail authentication, the controller logs a redacted error at
-  startup (no credential content in the log) and sets
-  `HubReachable=False` on all WorkloadClusters until the credential is
-  corrected.
+  startup (no credential content in the log) and sets both
+  `HubReachable=False` and `Available=False` (reason `HubUnreachable`)
+  on all WorkloadClusters. Stale `Available=True` conditions must not
+  persist when the controller cannot verify Hub state. When the
+  credential is corrected and the fulfillment-service is restarted,
+  the controller re-establishes the Hub watch and startup reconciliation
+  (§4.1) refreshes all conditions — clusters whose ManagedClusters are
+  healthy transition back to `Available=True` automatically.
 - **Rotation:** Credential rotation requires updating the Secret
   contents and restarting the fulfillment-service pod (or pods, if
   scaled) to pick up the new credential. The controller does not
   watch the Secret for changes. Operational documentation must include
   the rotation procedure (update Secret, rollout restart). During the
-  restart window, the Hub watch is temporarily interrupted;
-  `HubReachable=False` is set until the new credential establishes a
-  connection.
+  restart window, the Hub watch is temporarily interrupted; both
+  `HubReachable=False` and `Available=False` are set until the new
+  credential establishes a connection and startup reconciliation
+  refreshes conditions.
 - **Zeroization:** The kubeconfig is mounted as a read-only volume.
   The controller reads it into memory at startup to initialize the Hub
   client. The in-memory client object holds the credential for the
@@ -648,7 +681,7 @@ automatic when the underlying situation resolves.
 | Hub API unreachable | `Available=False`, `HubReachable=False`, reason `HubUnreachable` | Automatic: watch reconnects when Hub recovers; conditions update on reconnection | Condition message: "Cannot reach hub to validate cluster registration" |
 | Hub recovers after outage | `HubReachable=True`; `Available` updated based on ManagedCluster state | Automatic via watch reconnect | Conditions reflect current state |
 | ManagedCluster removed from Hub after registration | `Available=False`, reason `ManagedClusterRemoved` | CPA investigates; re-registers if the ManagedCluster returns | Condition message: "Previously validated managed cluster no longer exists on the hub" |
-| Cluster identity mismatch (UID changed) | `Available=False`, reason `ClusterIdentityMismatch` | CPA investigates; may need to create a new registration for the replacement cluster | Condition message: "Cluster identity changed; administrative action required" |
+| Cluster identity mismatch (UID changed) | `Available=False`, reason `ClusterIdentityMismatch` | Self-service replacement is blocked in this increment (uniqueness constraint + deferred Delete). Platform operator can soft-delete the record to release the uniqueness slot; CPA then re-registers. See §4.2 recovery path. | Condition message: "Cluster identity changed; administrative action required" |
 | Database write failure during Create | Create RPC returns gRPC error | Standard gRPC retry by client | gRPC error (e.g., `Internal`) |
 | Duplicate registration attempt | Create RPC returns `AlreadyExists` | No action needed — the existing record is canonical | `AlreadyExists` with descriptive message |
 
@@ -664,15 +697,20 @@ system reconciles automatically.
 **Freshness expiry:** Conditions are persisted in PostgreSQL and survive
 controller restarts. To prevent stale `Available=True` conditions from
 persisting indefinitely when the controller stops observing the Hub, each
-condition update records `last_transition_time`. The controller
-periodically (every 5 minutes) re-validates all WorkloadCluster
-conditions against the informer cache and updates `last_transition_time`
-on confirmation. Consumers that require freshness guarantees (e.g.,
-placement queries) should compare `last_transition_time` against a
-staleness threshold (recommended: 15 minutes). If the controller is down
-for longer than the threshold, conditions are considered stale and the
-cluster should not be selected for new placements. Startup reconciliation
-(§4.1) refreshes all conditions on controller restart, restoring
+condition carries two timestamps: `last_transition_time` (updated only
+when the condition's status or reason actually changes) and
+`last_observed_time` (updated on every controller observation, including
+periodic re-validation). The controller periodically (every 5 minutes)
+re-validates all WorkloadCluster conditions against the informer cache
+and updates `last_observed_time` on confirmation, whether or not the
+status changed. `last_transition_time` changes only on actual status or
+reason transitions, preserving Kubernetes condition semantics. Consumers
+that require freshness guarantees (e.g., placement queries) should
+compare `last_observed_time` against a staleness threshold (recommended:
+15 minutes). If the controller is down for longer than the threshold,
+`last_observed_time` becomes stale and the cluster should not be selected
+for new placements. Startup reconciliation (§4.1) refreshes all
+conditions and `last_observed_time` on controller restart, restoring
 freshness. The staleness threshold and re-validation interval are
 configurable via controller flags.
 
@@ -799,13 +837,27 @@ therefore deferred to the increment that defines the full disconnect
 lifecycle, including handling of in-flight workloads and placement
 dependencies.
 
+**Authorization and dispatch:** The OPA policy does not include a
+`workload_cluster:delete` permission. Because the OSAC generic server
+runs OPA authorization before handler dispatch, all Delete requests —
+from any role, including CPA — receive `PermissionDenied` at the
+authorization layer. The Delete handler (`Unimplemented`) is never
+reached in practice; it serves as defense-in-depth. This means tests
+(U15, E7) expect `PermissionDenied`, not `Unimplemented`.
+
 The proto definition includes the Delete RPC for schema completeness
-(standard OSAC pattern), but the handler returns `Unimplemented` in this
-increment. If a narrowly justified invalid-registration cleanup is
-required before disconnect is designed (e.g., correcting a typo in
-`hub_cluster_name`), the CPA can create a new WorkloadCluster with the
-correct name — the old registration with `Available=False` remains inert
-and does not affect placement.
+(standard OSAC pattern). When the disconnect increment adds the full
+Delete lifecycle, it adds `workload_cluster:delete` to the OPA policy
+for the CPA role and replaces the `Unimplemented` handler with the
+actual implementation.
+
+**Cleanup of invalid registrations:** If a narrowly justified
+invalid-registration cleanup is required before disconnect is designed
+(e.g., correcting a typo in `hub_cluster_name`), the CPA can create a
+new WorkloadCluster with the correct name — the old registration with
+`Available=False` remains inert and does not affect placement. For
+identity-mismatch scenarios where the same `hub_cluster_name` is
+needed, see §4.2 recovery path.
 
 ## IC-5: CLI Commands
 
@@ -1060,7 +1112,7 @@ hygiene action with no impact on this design.
 | U4 | Create with source_hub_id not matching configured Hub | FR-1 | Returns InvalidArgument |
 | U5 | Create with duplicate (source_hub_id, hub_cluster_name) — application check | FR-4 | Returns AlreadyExists with descriptive message |
 | U6 | Concurrent duplicate (source_hub_id, hub_cluster_name) — DB constraint | FR-4 | Exactly one succeeds; other returns AlreadyExists |
-| U7 | Create with same hub_cluster_name but different source_hub_id | FR-1 | Succeeds (different physical identity) |
+| U7 | Create with same hub_cluster_name but different source_hub_id | FR-1 | Returns InvalidArgument — source_hub_id must match the single configured Hub identity (§4.3). Multi-hub scenarios where different source_hub_ids coexist are deferred to the multi-hub increment (§4.8). |
 | U8 | Create with allowed_tenants=[] | FR-5 | Succeeds; cluster available to all tenants |
 | U9 | Create with allowed_tenants=["tenant-a"] | FR-5 | Succeeds; cluster restricted to tenant-a |
 | U10 | Update allowed_tenants on existing cluster | FR-5 | Allowed_tenants updated, version incremented |
@@ -1068,7 +1120,7 @@ hygiene action with no impact on this design.
 | U12 | Update hub_cluster_name (immutable) | FR-1 | Returns InvalidArgument |
 | U13 | List returns only WorkloadClusters (no tenant filter) | FR-2, FR-3 | All clusters returned to CPA |
 | U14 | Get by ID | FR-2 | Returns WorkloadCluster with current conditions |
-| U15 | Delete RPC returns Unimplemented | — | Returns Unimplemented (deferred to disconnect increment) |
+| U15 | Delete RPC returns PermissionDenied | — | Returns PermissionDenied — no `workload_cluster:delete` permission in OPA policy (see IC-4) |
 | U16 | Private fields not in public API | FR-3 | `hub_cluster_uid` absent from public response |
 | U17 | MaaS service disabled | — | All RPCs return Unavailable |
 | U18 | Update with allowed_tenants omitted preserves existing value | FR-5 | Existing allowed_tenants unchanged |
@@ -1099,7 +1151,7 @@ hygiene action with no impact on this design.
 | I13 | Startup reconciliation after controller restart | FR-2 | All WorkloadCluster conditions refreshed against informer cache |
 | I14 | Retry after failed status write | FR-4 | Condition write retried; eventually succeeds |
 | I15 | ManagedCluster accepted but ManagedClusterConditionAvailable=False | FR-4 | Available=False, reason ManagedClusterUnavailable |
-| I16 | Freshness re-validation updates last_transition_time | — | Conditions confirmed within re-validation interval |
+| I16 | Freshness re-validation updates last_observed_time without changing last_transition_time | — | last_observed_time updated within re-validation interval; last_transition_time unchanged when status/reason did not transition |
 
 ## 10.4 API Tests
 
@@ -1159,8 +1211,8 @@ hygiene action with no impact on this design.
 | # | Scenario | Requirement | Expected Behavior |
 |---|---|---|---|
 | K1 | hub-kubeconfig Secret present and valid | — | Controller starts, watch established |
-| K2 | hub-kubeconfig Secret missing | — | Controller logs error, HubReachable=False on all clusters |
-| K3 | hub-kubeconfig Secret with invalid credentials | — | HubReachable=False, condition message describes auth failure |
+| K2 | hub-kubeconfig Secret missing | — | Controller logs error, HubReachable=False and Available=False (reason HubUnreachable) on all clusters; recovery after credential fix and restart restores conditions via startup reconciliation |
+| K3 | hub-kubeconfig Secret with invalid credentials | — | HubReachable=False and Available=False (reason HubUnreachable) on all clusters; condition message describes auth failure without exposing credentials |
 
 ## 10.10 Direct OCM Compatibility Tests
 
@@ -1255,7 +1307,7 @@ real vs. simulated dependencies, and follow-up gaps.
 | E4 | Register non-existent ManagedCluster | FR-4 | Available=False with descriptive reason |
 | E5 | Verify CPA-only access | FR-3 | Tenant roles get PermissionDenied |
 | E6 | Register same cluster twice | FR-4 | AlreadyExists |
-| E7 | Delete RPC returns Unimplemented | — | Unimplemented (deferred) |
+| E7 | Delete RPC returns PermissionDenied | — | PermissionDenied — no `workload_cluster:delete` in OPA policy; handler not reached (see IC-4) |
 | E8 | List query with capability and condition filter | FR-5 (partial) | Only clusters with supported_workloads=["maas"] and Available=True returned. Note: this tests filter behavior only; it does not prove tenant isolation, which requires the Praxis integration follow-up. |
 
 **E2E infrastructure requirement:** An ACM Hub with at least one
@@ -1333,6 +1385,28 @@ restores access.
 Restarting the fulfillment-service resumes normal operation including
 Hub watch re-establishment.
 
+**Identity mismatch recovery:** When a WorkloadCluster reports
+`ClusterIdentityMismatch` (the ManagedCluster's `id.k8s.io` UID changed
+under the same name), self-service resolution is blocked in this
+increment because the UID is immutable and Delete is deferred. The
+platform operator can resolve this by:
+
+1. Soft-deleting the mismatched record: set `deletion_timestamp` on the
+   `workload_clusters` row and copy it to `archived_workload_clusters`.
+2. Notify the CPA to create a new WorkloadCluster registration with the
+   same Hub identity.
+
+This requires direct database access and should be documented in
+operational runbooks. See §4.2 recovery path for details.
+
+**Invalid registration cleanup:** For registrations with incorrect
+`hub_cluster_name` (typos), the CPA creates a new WorkloadCluster with
+the correct name. The old registration remains as an inert record with
+`Available=False` (reason `ManagedClusterNotFound`). It does not affect
+placement or consume resources beyond database storage. Removing inert
+records requires platform operator database access until Delete is
+implemented (see IC-4).
+
 # 15. Infrastructure Needed
 
 - **E2E test environment:** An ACM Hub with at least one registered
@@ -1356,16 +1430,25 @@ Hub watch re-establishment.
   adapter is introduced.
 
 - **No Delete in this increment.** Deferring Delete means invalid
-  registrations (typos, wrong Hub) accumulate as inert records. The CPA
-  cannot self-service remove them. Cleanup requires either a new
-  registration with the correct name (leaving the old one) or direct
-  database access by the platform operator.
+  registrations (typos, wrong Hub) and identity-mismatched records
+  accumulate as inert records. The CPA cannot self-service remove them.
+  For name typos, the CPA creates a new registration with the correct
+  name — the old record remains inert. For identity mismatches, where
+  the same `hub_cluster_name` is needed, the uniqueness constraint
+  blocks re-registration; platform operator database cleanup is required
+  (see §4.2 recovery path). All Delete requests return
+  `PermissionDenied` because no `workload_cluster:delete` OPA
+  permission exists (see IC-4).
 
 - **Freshness-based staleness adds operational complexity.** The
   freshness expiry mechanism requires placement consumers to check
-  `last_transition_time`, and operators must monitor controller health
-  to ensure conditions stay fresh. A simpler time-unbounded design
-  would be operationally simpler but risks stale placement.
+  `last_observed_time` (a dedicated observation timestamp separate from
+  `last_transition_time`), and operators must monitor controller health
+  to ensure conditions stay fresh. The two-timestamp model preserves
+  Kubernetes condition semantics (`last_transition_time` changes only on
+  actual transitions) while providing a reliable freshness signal. A
+  simpler time-unbounded design would be operationally simpler but risks
+  stale placement.
 
 - **Single Hub limits scale.** The single configured Hub connection
   limits this increment to one Hub's managed clusters. Multi-hub
@@ -1378,7 +1461,7 @@ Hub watch re-establishment.
 | Hub cluster removed while OSAC workloads are active | `Available=False` with reason `ManagedClusterRemoved` signals MaaS placement to stop scheduling new workloads. Existing workload handling is a MaaS concern. |
 | ACM API version changes break Hub watch | The `cluster.open-cluster-management.io/v1` ManagedCluster API is GA and stable. Client pins the API version. Extraction triggers documented in §4.1. |
 | SharedInformer memory for large Hub | Scales linearly with ManagedCluster count. Acceptable for expected scale (~500 clusters). Monitor and evaluate if scale exceeds assumptions. |
-| Hub credential rotation | hub-kubeconfig Secret update requires fulfillment-service pod restart (rollout restart) to pick up new credentials. Rotation procedure documented in §4.5. During restart window, HubReachable=False; freshness expiry (§4.6) prevents stale placement. |
+| Hub credential rotation | hub-kubeconfig Secret update requires fulfillment-service pod restart (rollout restart) to pick up new credentials. Rotation procedure documented in §4.5. During restart window, both HubReachable=False and Available=False are set (§4.5); startup reconciliation restores conditions when the new credential establishes a connection. |
 
 ---
 
@@ -1387,7 +1470,8 @@ Hub watch re-establishment.
 Revised: revise @ design 0.9.0 - 155e7d6, workspace design/OSAC-6488 @ a74d9f5
 Reviewed: respond @ design/OSAC-6488 — trusted corrections (eranco74) and CodeRabbit findings
 Reviewed: independent review @ design/OSAC-6488 — evidence matrix case-ID corrections (I1–I15, I16), all eranco74 baselines preserved, all CodeRabbit findings verified addressed
-Phases: draft, revise, revise, respond, respond, respond
+Reviewed: respond @ design/OSAC-6488 — five CodeRabbit consistency findings: U7 single-Hub validation, credential failure clears Available, UID replacement recovery path, freshness last_observed_time, Delete authorization/dispatch alignment
+Phases: draft, revise, revise, respond, respond, respond, respond
 Sources: PRD (prd.md), PR #394 review feedback (eranco74 trusted corrections, CodeRabbit inline findings), baselined architectural decisions, INTEGRATION-TESTING.md planning evidence requirements, OSAC source storage shape verification
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"a74d9f5","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"a74d9f5","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
