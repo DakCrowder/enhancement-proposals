@@ -3,7 +3,7 @@ title: granular-cluster-status-reporting-ui
 authors:
   - Elay Aharoni
 creation-date: 2026-10-13
-last-updated: 2026-10-18
+last-updated: 2026-10-21
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-2597
 prd:
@@ -20,44 +20,46 @@ superseded-by:
 
 ## Experience
 
-Tenant users see **State** and **Health** on the cluster list and detail page, with current activity beneath State. The list keeps **Version** and removes the ambiguous **Lifecycle** column; the version lifecycle label remains beside Version on details. Details remain accessible during deletion. The detail page keeps its conditions and endpoint URLs and shows a compact node count and state for each node set.
+Tenant users keep the existing cluster list columns and **Status** label. Only stalled provisioning changes that label to a warning with a popover. The detail header keeps its existing state-only label; a separate read-only progress card follows the [BMaaS detail-page pattern](../OSAC-3459-bmaas-provisioning-progress/ui-design.md). Health appears on the detail page, alongside node sets, conditions, and endpoint URLs. Details remain accessible during deletion.
 
 Cloud Provider Admins cannot see cluster navigation or open cluster pages, including direct URLs. [User decision]
 
 ## Display rules
 
-All values come from the public `Cluster` returned by `Clusters.List/Get`. The UI does not read HyperShift resources.
+All values come from the public `Cluster` returned by `Clusters.List/Get`. The UI does not read HyperShift resources or decide that a stage is stalled from elapsed time.
 
-- **State and activity:** Show `status.state` as the primary value. For `PROGRESSING` or `DELETING`, put the `PROGRESSING` condition's `reason` on a second line (for example, **Workers joining** below **Provisioning**). `Stalled` is a warning; `StageUnknown` or a missing reason displays **Stage unknown**. For `READY`, show **Scaling** beneath the state only when a node set reports `SCALING`. Other states have no activity text. `READY` can coexist with degraded health.
-- **Health:** Use `CONTROL_PLANE_AVAILABLE` and `WORKERS_READY` for separate Control plane and Workers indicators. Their true/false labels are **Available/Unavailable** and **Ready/Not ready**. Missing or unknown conditions show **Unknown**. Show true `DEGRADED` or `FAILED` conditions separately; never infer health from lifecycle or replica counts.
+- **List Status:** Keep the current column, labels, and other columns, including **Version** and **Lifecycle**. Only when `status.state=PROGRESSING` **and** the `PROGRESSING` condition has `reason=Stalled`, show **Provisioning** in a warning-color label with a warning icon. A keyboard-accessible popover explains that progress has stalled and shows the condition's `message` (which names the stuck stage), or a generic fallback if absent. This is not a failure. All other rows keep their current label and have no stage text or popover; `StageUnknown`, missing reasons, and `DELETING` do not trigger this list warning.
+- **Detail progress:** Keep the header badge state-only. Place a PatternFly **Provisioning progress** card below the header, using BMaaS's `Card`/`ProgressStepper` pattern. Its ordered steps are **Control plane setup**, **Workers joining**, and **Finalizing**. `CONTROL_PLANE_AVAILABLE=True` completes the first step, `WORKERS_READY=True` completes the second, and `status.state=READY` completes all three. While provisioning, the first unmet step is current, earlier steps are complete, and later steps are not started; show the API's `PROGRESSING.reason` and `message` on the current step. The reason identifies `Stalled` or `StageUnknown`, but sub-stage reason strings are otherwise display-only and never select a step. `Stalled` warns without marking failure; missing or inconsistent signals leave progress unavailable rather than marking unverified steps complete. `READY` completes provisioning even if later worker health degrades; a true `FAILED` condition shows failure without guessing an unreported step. Icons and text accompany each step state so color is not the only cue.
+- **Deletion progress:** While `DELETING`, use a separate **Deletion progress** card in the same placement for the current teardown reason/message, with a warning for `Stalled`. Do not infer ordered teardown steps from opaque reasons. Only `DELETE_FAILED` and a true `FAILED` condition indicate deletion failure. The list Status label remains **Deleting**.
+- **Health:** On details, outside the header badge, use `CONTROL_PLANE_AVAILABLE` and `WORKERS_READY` for separate Control plane and Workers indicators. Their true/false labels are **Available/Unavailable** and **Ready/Not ready**. Missing or unknown conditions show **Unknown**. Keep true `DEGRADED` or `FAILED` conditions visible in the existing Conditions table; never infer health from lifecycle or replica counts. Do not add a Health list column.
 - **Node sets:** In the existing table, keep Name and Host type; replace Size with **Nodes** as current/requested (for example, **1/3 nodes present**) and add the per-set **State**. Join `spec.node_sets` and `status.node_sets` by key: current is `current_replicas`, requested is `spec.size`. Missing current count or state shows **Unknown**; a reported zero shows **0**. Do not label the ratio “ready”: the backend reports whole-set readiness, not individual nodes. The public `Cluster` has no individual node inventory.
 
 ## UI changes
 
-- `ClustersTable`: rename Status to State, show activity beneath it, add Health, and remove Lifecycle while keeping Version. Keep the cluster name clickable while `DELETING`.
-- `ClusterDetailsPageContent`: show activity beneath the existing state badge and Health beside it. In the existing Conditions table, new health conditions appear as rows; the `PROGRESSING` row shows its reason and message in the existing Reason and Message columns. Give condition types readable labels; add no popover or columns.
+- `ClustersTable`: keep its columns and state labels; add only the stalled-provisioning warning treatment and popover. The previously agreed deleting-cluster detail link remains available while actions stay disabled.
+- `ClusterDetailsPageContent`: leave `ClusterStatusLabel` in the header state-only. Add the read-only progress card below it and a separate Health summary in the detail content. Keep the Conditions table's existing Reason and Message columns, with readable condition types; add no conditions-table popover or column.
 - Node sets tab: replace Size with Nodes and add State in its existing table.
 - `ClusterDetailsPage`: show the existing not-found view when `Clusters.Get` returns `NotFound` after archival; other errors remain retryable.
-- Share one formatter between list and detail. Keep the existing `useClusters`/`useCluster` hooks and 10-second refresh; add no RPC or per-row request. Preserve the admin route gate. Use generated enum names and regenerate `@osac/types` after the backend API changes.
+- Share the `PROGRESSING` condition lookup, but keep list warning and detail-card presentation separate. Reuse the existing `useClusters`/`useCluster` hooks and 10-second refresh; add no RPC, timer, or per-row request. Preserve the admin route gate. Use generated enum names and regenerate `@osac/types` after the backend API changes.
 
 ## Backend dependencies
 
-- **Ready now:** Provisioning stage and `Stalled`/`StageUnknown` use the current API. The UI can remove Lifecycle from the list, keep the cluster name clickable while `DELETING`, and verify the existing admin route gate.
-- **Wait for health:** The backend must publish and populate the control-plane and worker conditions and preserve `READY` during degradation and scaling.
+- **Ready now:** The public `PROGRESSING` reason/message support the list's `Stalled` warning and the detail card's current-stage text. A backend fix is still needed to replace a stale reason with `StageUnknown` when the HostedCluster is unavailable. Deleting-cluster detail access and the admin route gate can be verified now.
+- **Wait for health and progress milestones:** The backend must publish and populate the control-plane and worker conditions and preserve `READY` during degradation and scaling. Until then, the card must not claim those steps are complete.
 - **Wait for node sets:** The backend must publish and populate `current_replicas` and per-set `state`, including `SCALING`.
 - **Wait for teardown:** The backend must publish deletion stage reasons and `DELETE_FAILED` signals.
 
 ## Verification
 
-UI unit tests cover State with activity text, list Version without Lifecycle, version lifecycle on details, new condition rows and readable labels, the existing condition message column, missing and zero node counts, current/requested display, `READY` with degraded workers or scaling, deletion and `NotFound`, and admin direct URLs with no cluster RPCs. Run `pnpm run typecheck`, `pnpm lint`, and `pnpm test` for implementation. Browser E2E checks require the corresponding backend phase and an owned UI E2E harness.
+UI unit tests cover the list's exact `PROGRESSING` + `Stalled` predicate, warning icon/color and accessible popover with message/fallback; unchanged columns and labels otherwise; the state-only detail badge; progress-card steps derived from conditions, unknown/stalled/failure behavior, and current reason/message; separate Health; missing and zero node counts; deletion and `NotFound`; and admin direct URLs with no cluster RPCs. Run `pnpm run typecheck`, `pnpm lint`, and `pnpm test` for implementation. Browser E2E checks require the corresponding backend phase and an owned UI E2E harness.
 
 ---
 
 ## Provenance
 
 Authored: draft @ design 0.11.5 - 1c6e8de, workspace main @ f51d7c726
-Final: respond @ design 0.11.5 - a58bdf7, workspace main @ 8e9f80546
+Final: revise @ design 0.11.5 - d1824b1, workspace main @ 340adb5d7
 
-> Context changed between draft and respond.
+> Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"a58bdf7","source_repo":"8e9f80546","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":268,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"340adb5d7","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":359,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","revise","revise","revise","respond","respond","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
