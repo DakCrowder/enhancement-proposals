@@ -48,6 +48,17 @@ types (e.g., VMaaS) without schema migration. A single ACM Hub is active
 in this increment; the schema includes an immutable `source_hub_id` for
 future multi-hub compatibility.
 
+## 1.1 Terminology
+
+| Term | Definition |
+|------|------------|
+| **WorkloadCluster** | The provider-global OSAC resource introduced by this design, representing one registered physical cluster. |
+| **CPA** | Cloud Provider Admin — the OSAC role authorized to register and manage WorkloadClusters. |
+| **ACM Hub** | The Advanced Cluster Management for Kubernetes management plane that tracks ManagedClusters. |
+| **ManagedCluster** | An OCM custom resource on the Hub representing a cluster accepted into ACM management. |
+| **OCM** | Open Cluster Management — the CNCF project providing the `cluster.open-cluster-management.io/v1` CRD API consumed by the controller. |
+| **MaaS** | The OSAC managed AI workload placement service; the initial workload type for registered clusters. |
+
 # 2. Goals and Non-Goals
 
 ## 2.1 Goals
@@ -59,13 +70,16 @@ future multi-hub compatibility.
 - Include an immutable `source_hub_id` field in the spec validated against
   the configured single Hub, with documented future multi-hub resolution
   path.
-- Consume OCM `ManagedCluster` CRDs directly via list/watch on the Hub's
-  Kubernetes API, with explicit trust, RBAC, version, and availability
-  contracts documented.
-- Use declarative conditions (`Available`, `HubReachable`) to represent
-  cluster state, avoiding imperative import state machines or polling.
-- Support an additive `supported_workloads` capability list starting with
-  `maas`, enabling future `vmaas` coexistence without schema migration.
+- Continuously reflect Hub cluster state by consuming OCM
+  `ManagedCluster` CRDs directly via list/watch on the Hub's Kubernetes
+  API, with explicit trust, RBAC, version, and availability contracts
+  documented.
+- Surface cluster readiness through declarative conditions (`Available`,
+  `HubReachable`) that reflect current observed state, avoiding
+  imperative state machines or polling.
+- Allow clusters to declare workload capabilities via an additive
+  `supported_workloads` list starting with `maas`, enabling future
+  `vmaas` coexistence without schema migration.
 - Model registration as explicit external-infrastructure registration
   while preserving a canonical day-2 WorkloadCluster shape that future
   CaaS automatic provisioning can create.
