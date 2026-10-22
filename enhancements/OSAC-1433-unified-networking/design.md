@@ -3,7 +3,7 @@ title: Unified Networking API for VMaaS, CaaS, and BMaaS
 authors:
   - dmanor@redhat.com
 creation-date: 2026-06-03
-last-updated: 2026-10-21
+last-updated: 2026-10-22
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-1433
 prd: "prd.md"
@@ -325,6 +325,20 @@ annotation handoff until its contract-adoption task is complete
 ([OSAC-6376](https://redhat.atlassian.net/browse/OSAC-6376)). [Codebase:
 osac-operator/pkg/networkmanager/types.go;
 osac-operator/internal/controller/externalip_contract.go]
+
+NATGateway uses an independent `natGatewayContractVersion` registration key;
+it does not inherit the ExternalIP or ExternalIPAttachment contract version.
+A manager opts into `natGatewayContractVersion: v1` only after its create and
+delete roles consume the v1 inputs and return matching result artifacts. An
+empty value retains that manager's existing NATGateway behavior. AgentlessNet
+implements v1 under
+[OSAC-6202](https://redhat.atlassian.net/browse/OSAC-6202); its contract is
+defined under
+[OSAC-6693](https://redhat.atlassian.net/browse/OSAC-6693). Netris adopts v1
+under [OSAC-6694](https://redhat.atlassian.net/browse/OSAC-6694). The Kubernetes
+manager implements and advertises v1 through
+[OSAC-4265](https://redhat.atlassian.net/browse/OSAC-4265) and
+[OSAC-4268](https://redhat.atlassian.net/browse/OSAC-4268).
 
 ### How VMs Join the Fabric
 
@@ -1269,6 +1283,57 @@ message ExternalIPAttachmentSpec {
 
 All fields are immutable after creation.
 
+##### NATGateway AAP contract v1
+
+NATGateway v1 is independent from the ExternalIP allocation and
+ExternalIPAttachment contracts. The operator resolves and validates the
+current VirtualNetwork and ExternalIP before ensure dispatch. It submits the
+NATGateway CR as `osac_job_vars.resource` and submits this dependency snapshot
+as `osac_job_vars.nat_gateway_context`:
+
+| Context object | Required caller-supplied values |
+|---|---|
+| `external_ip` | Kubernetes name and namespace, Fulfillment ID, Kubernetes UID, tenant ID, allocated IPv4 `address`, `state: Allocated`, `phase: Ready` |
+| `virtual_network` | Kubernetes name and namespace, Fulfillment ID, Kubernetes UID, tenant ID, canonical IPv4 `ipv4_cidr`, `phase: Ready` |
+
+The operator requires the referenced resources to match the NATGateway's
+immutable IDs, share its tenant and networking namespace, and remain
+non-deleting. The address comes from `ExternalIP.status.address`, which is
+published only after the selected ExternalIP contract accepts its allocation.
+The Subnet set is not copied into this context; a fabric manager obtains its
+current source CIDRs from its own provider state.
+
+An ensure job returns a result in the artifact from that same AAP job:
+
+```yaml
+osac_result:
+  schemaVersion: v1
+  operation: nat_gateway.ensure
+  resourceUID: <NATGateway Kubernetes UID>
+  observedGeneration: <generation submitted in osac_job_vars.resource>
+  data: {}
+```
+
+Delete uses `operation: nat_gateway.delete` with the same envelope. The
+controller validates the artifact against the inputs and status from the same
+latest successful job, including resource identity, generation, selected
+contract version, dependency snapshot for ensure, and current resource state.
+It sets Ready only after an accepted ensure result. Delete uses the pinned
+manager/version and saved provider identity; it does not require live Ready
+dependencies. The finalizer and ExternalIP consumer reservation remain until a
+matching successful delete result is accepted.
+
+The controller owns OSAC dependency lookup and OSAC status/annotation updates.
+AAP does not discover referenced OSAC resources. A manager may access its own
+provider API to perform the operation; for example, the Kubernetes manager may
+create or remove its provider-owned OVN EgressIP object. It must not write
+NATGateway, ExternalIP, or VirtualNetwork status or annotations. Existing
+unversioned managers keep their current input, output, and cleanup behavior
+until they opt into v1. [Codebase:
+`osac-operator/pkg/provisioning/extra_vars_context.go`,
+`osac-operator/internal/controller/natgateway_controller.go`,
+`osac-aap/collections/ansible_collections/osac/templates/roles/agentless_net`]
+
 ##### ExternalIPAttachment AAP contract v1
 
 The attachment job contract is independently versioned from
@@ -1906,6 +1971,24 @@ response but does not prove upstream BGP advertisement.
 | TC-EIA-V1-04 | FR-9, FR-10 | Detach from saved provider state; retain finalizers and the ExternalIP consumer reservation when the detach job or result is invalid. | Unit and component integration / `[DEV]` OSAC-6308 | Operator controller tests plus the AgentlessNet attachment target above. Provider commands are fixture-driven. |
 | TC-EIA-V1-05 | FR-5, FR-10 | A Fulfillment-created BMI replies through two ExternalIPs; retry one attachment, detach it without changing its peer, then detach before releasing EIPs or deleting BMI/Subnet/VN. | Deployed lab E2E / `[DEV]` OSAC-6308 | From the repository root on `e2e`, run `bash ./vlan-e2e.sh --external-ip` and recover with `bash ./vlan-e2e.sh --cleanup --external-ip`. Requires the source-pinned OSAC/AAP deployment, BMaaS, an available host/CatalogItem, and Containerlab. The static route is not BGP coverage. |
 
+### NATGateway v1 Contract Coverage
+
+These cases cover the independent manager contract described in [NATGateway
+AAP contract v1](#natgateway-aap-contract-v1). Unit and Envtest cases use
+fixture-driven managers; they do not establish deployed AAP transport or
+external packet delivery.
+
+| Case | Requirement | Scenario and assertion | Tier / owner | Suite, command, and boundary |
+|---|---|---|---|---|
+| TC-NATGW-V1-01 | FR-6, FR-9 | Parse empty and `v1` manager registrations; reject unsupported versions. Verify NATGateway version selection is independent of ExternalIP and ExternalIPAttachment versions. | Unit / `[DEV]` OSAC-6202 | `osac-operator/pkg/networkmanager/types_test.go`; from the osac root, `make -C osac-operator test`. ConfigMaps are fixtures. |
+| TC-NATGW-V1-02 | FR-6, FR-9 | Resolve one Ready, same-tenant VirtualNetwork and one Allocated/Ready ExternalIP. Reject missing, ambiguous, deleting, cross-namespace, cross-tenant, wrong-reference, or noncanonical IPv4 dependencies before dispatch. | Unit / `[DEV]` OSAC-6202 | `osac-operator/internal/controller/natgateway_contract_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes objects are fixtures. |
+| TC-NATGW-V1-03 | FR-6, FR-9 | Submit the NATGateway CR and typed dependency snapshot in the same AAP job. Verify that the ExternalIP address is `status.address` and that the context matches the current references. | Unit / `[DEV]` OSAC-6202 | `osac-operator/pkg/provisioning/aap_provider_test.go` and NATGateway controller tests; from the osac root, `make -C osac-operator test`. AAP inputs are fixtures. |
+| TC-NATGW-V1-04 | FR-9 | Reject missing/malformed result data, wrong schema/operation, UID or generation mismatch, nonempty data, wrong job ID, stale desired version, stale submitted identity, or changed ensure dependencies. | Unit / `[DEV]` OSAC-6202 | `osac-operator/pkg/provisioning/nat_gateway_result_test.go` and `osac-operator/internal/controller/natgateway_contract_test.go`; from the osac root, `make -C osac-operator test`. AAP responses are fixtures. |
+| TC-NATGW-V1-05 | FR-9, FR-10 | A matching successful ensure result permits Ready. A matching delete result for the latest deleting job permits finalizer removal; missing/stale results retain the finalizer and consumer reservation for retry. | Envtest / `[DEV]` OSAC-6202 | `osac-operator/internal/controller/natgateway_contract_envtest_test.go`; from the osac root, `make -C osac-operator test`. Kubernetes API and etcd are real; AAP is fixture-driven. |
+| TC-NATGW-V1-06 | FR-6, FR-9 | An unversioned manager retains its existing operation path. A v1 manager requires its v1 input and result, with no fallback to an unversioned annotation handoff. | Unit / `[DEV]` OSAC-6202 | `osac-operator/internal/controller/natgateway_contract_test.go`; from the osac root, `make -C osac-operator test`. Manager and provider responses are fixtures. |
+| TC-NATGW-V1-07 | FR-6, FR-9 | AgentlessNet production ensure/delete playbooks validate supplied context, do not discover OSAC dependencies, and emit same-job artifacts only after provider state is verified. | Component integration / `[DEV]` OSAC-6202 | From `osac-aap/tests/integration/`, run `uv run ansible-playbook targets/agentless_net_nat_gateway/tasks/baseline.yml -e '@common_vars.yml'`. Real Ansible subprocesses and SQLite; provider commands and Kubernetes access are fixtures/omitted. |
+| TC-NATGW-V1-08 | FR-6, FR-9 | Netris and Kubernetes-manager adoption preserve provider behavior and advertise v1 only after their role contracts pass. | Component integration / `[DEV]` OSAC-6694, OSAC-4265, OSAC-4268 | Manager-specific tests in the owning tasks. Netris provider API and Kubernetes provider resources use their component harnesses; no deployed external traffic claim is made. |
+
 ### Provider Networking Control Coverage (FR-10)
 
 - Verify enabled and disabled create/delete for each of the seven resource
@@ -1995,9 +2078,11 @@ No additional infrastructure beyond existing OSAC components and managers.
 
 ## Provenance
 
-Authored: revise @ design 0.11.5 - d1824b1, workspace e2e @ 33568a25c
-Phases: revise, revise, revise, revise, revise
+Authored: revise @ design 0.11.5 - e2b0d87, workspace osac-6202-natgateway-snat @ 9eac9f81a
+Final: revise [manual] @ design 0.11.5 - e2b0d87, workspace osac-6202-natgateway-snat @ b6007aac2
+
+> Context changed between revise and revise.
 
 > This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"d1824b1","source_repo":"33568a25c","source_repo_branch":"e2e","commits_behind_main":0,"commits_ahead_main":13,"main_ref":"main","phases":["revise","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":true} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"b6007aac2","source_repo_branch":"osac-6202-natgateway-snat","commits_behind_main":0,"commits_ahead_main":17,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":true} -->

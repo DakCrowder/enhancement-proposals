@@ -4,10 +4,11 @@
 
 - **Feature:** OSAC-3664 — Fabric Manager — Agentless VLAN
 - **Design task:** OSAC-4307
+- **Current contract amendment:** OSAC-6693 — NATGateway v1 controller/AAP contract
 - **Design:** [design.md](design.md)
 - **Authority:** This requirement-anchored test plan is part of the design PR;
   the design document's Test Plan section is only a short strategy summary.
-- **Total test cases:** 34
+- **Total test cases:** 36
 - **Requirements covered:** 13 of 13
 - **Interface changes covered:** 6 of 6
 
@@ -378,23 +379,40 @@
 - A NATGateway references that ExternalIP and a Ready VirtualNetwork.
 - The VirtualNetwork has two Ready Subnets, and the NATGateway state contains
   both source CIDRs.
-- The supported external path is available, so the permit-all baseline permits
-  the test egress flow.
+- The VLAN lab's direct peer link and test-only `/32` return route are available,
+  so the permit-all baseline permits the test egress flow.
+
+##### Test Tier and Owner
+
+- Local deployed lab E2E — OSAC-6202 [DEV]. From the OSAC repository root on
+  branch `e2e`, run `bash ./vlan-e2e.sh --nat-gateway`. This is a local lab
+  validation owned by the implementation task; it does not create a separate
+  QE task. The runner uses a test-only static route over the direct Containerlab
+  peer link and does not verify remote BGP advertisement or convergence.
 
 ##### Steps
 
-1. Send traffic from a Subnet interface to an external endpoint.
-2. Inspect the endpoint's observed source address and the NATGateway status.
+1. Create NATGateways for two VirtualNetworks, each with an allocated
+   ExternalIP, and create one Subnet in each network.
+2. Attach DHCP clients from both networks and send traffic to the local
+   upstream-router endpoint.
+3. Add a second Subnet to one VirtualNetwork, move a client into it, and send
+   traffic again.
+4. Inspect the endpoint's observed source address, NATGateway status, provider
+   source set, SNAT rules, and local FRR `/32` route.
 
 ##### Expected Results
 
 - The endpoint observes the NATGateway ExternalIP as the source address.
-- One explicit `SNAT --to-source` rule exists for each source CIDR; no
+- Each VirtualNetwork's clients observe its own NATGateway ExternalIP, including
+  clients on both Subnets; overlapping private CIDRs remain isolated.
+- One explicit `SNAT --to-source` rule exists for each active source CIDR; no
   host-side MASQUERADE changes the observed source.
-- The consumer-owned `/32` route is learned by the provider BGP peer.
+- The consumer-owned `/32` route is installed locally through the saved
+  VirtualNetwork next hop. The test-only static peer route returns traffic.
 - NATGateway status.phase is Ready.
 
-#### TC-FR6-02: Reconcile NAT rules after Subnet churn
+#### TC-FR6-02: Reconcile NAT rules before Subnet readiness or cleanup
 
 | Interface Change | Priority | Automation |
 |-----------------|----------|------------|
@@ -402,23 +420,133 @@
 
 ##### Preconditions
 
-- A Ready VirtualNetwork has a Ready NATGateway and one Subnet in
-  `nat_gateways.source_cidrs`.
-- A fake AAP provider can observe SNAT rule changes and Subnet finalizers.
+- A current schema-v1 SQLite state contains a Ready VirtualNetwork, one Ready
+  Subnet, an allocated ExternalIP, and a Ready NATGateway.
+- Provider commands are replaced by fixtures that record Subnet data-plane and
+  NATGateway reconciliation calls.
+
+##### Test Tier and Owner
+
+- Unit — OSAC-6202 [DEV]. From `osac-aap/`, run
+  `uv run --group development pytest tests/unit/test_agentless_network_state.py -k 'subnet_ensure_adds_nat_source or subnet_delete_reconciles_nat_sources or subnet_delete_waits_for_nat_gateway'`.
 
 ##### Steps
 
-1. Add a second Subnet to the VirtualNetwork and wait for its VLAN/DHCP state.
-2. Inspect NATGateway reconciliation and the source-CIDR revision.
-3. Delete the second Subnet and observe NATGateway and Subnet cleanup ordering.
+1. Call `StateStore.ensure_and_reconcile_subnet` for a second reserved Subnet.
+2. Record the provider call sequence and inspect the NATGateway source set and
+   revision after the Subnet reaches Ready.
+3. Call `StateStore.prepare_delete_subnet` for the second Subnet and record the
+   provider call sequence before DHCP, interface, or VLAN cleanup.
+4. Repeat Subnet deletion while the NATGateway is still deleting and retains
+   the Subnet source, then retry after the gateway cleanup succeeds.
 
 ##### Expected Results
 
-- The second CIDR is added to the desired SNAT set before the Subnet is
-  reported Ready.
-- Deleting the Subnet removes its SNAT rule and updates the revision before
-  the Subnet VLAN, gateway, or DHCP state is released.
-- The NATGateway remains usable for the first Subnet throughout the churn.
+- The second CIDR is added to the applied SNAT set after Subnet data-plane setup
+  and before the Subnet phase changes to Ready.
+- Deleting the Subnet removes its source from the applied set before DHCP,
+  namespace-interface, or VLAN state is withdrawn; the first Subnet's rule
+  remains present.
+- A provider-command failure leaves the Subnet deleting and retains the old
+  and pending source sets for retry.
+- A deleting NATGateway that still owns the Subnet source blocks Subnet cleanup
+  until NATGateway route and SNAT cleanup succeeds.
+
+#### TC-FR6-03: Run AgentlessNet NATGateway v1 playbooks and result artifacts
+
+| Interface Change | Priority | Automation |
+|-----------------|----------|------------|
+| IC-5 | high | automated |
+
+##### Preconditions
+
+- A temporary schema-v1 SQLite state contains the VirtualNetwork, Subnet,
+  ExternalIPPool, and ExternalIP provider prerequisites.
+- The AgentlessNet provider inventory contains one test network node and
+  provider commands are replaced by test-only fixtures.
+
+##### Test Tier and Owner
+
+- Component integration — OSAC-6202 [DEV]. From `osac-aap/tests/integration/`,
+  run `uv run --group development ansible-playbook targets/agentless_net_nat_gateway/tasks/baseline.yml -e '@common_vars.yml'`.
+
+##### Steps
+
+1. Run the production NATGateway create playbook with the controller-shaped v1
+   context and validate the returned `nat_gateway.ensure` artifact.
+2. Retry ensure with the same identity and inspect the persistent provider row.
+3. Run delete with a fixture route-withdrawal failure, then inspect retained
+   deleting state and retry after provider cleanup succeeds.
+4. Retry delete after the provider row has been removed.
+
+##### Expected Results
+
+- Ensure emits a v1 `osac_result` only after provider state succeeds; the row
+  contains the ExternalIP, VirtualNetwork, applied Subnet source CIDRs, and
+  route cleanup identity.
+- A failed cleanup emits no result artifact and retains the NATGateway row and
+  ExternalIP consumer reservation.
+- A matching successful delete emits `nat_gateway.delete` and removes the
+  provider row; a repeated delete is idempotent.
+- The child Ansible process has unusable Kubernetes credentials and performs
+  no OSAC API discovery.
+
+#### TC-FR6-04: Retry, reconcile Subnet sources, and clean up NATGateway state
+
+| Interface Change | Priority | Automation |
+|-----------------|----------|------------|
+| IC-5 | high | automated |
+
+##### Preconditions
+
+- The OSAC-6202 implementation is deployed from the source-pinned SNAT branch.
+- The local VLAN lab has an available test ExternalIPPool, SNO, AAP, network
+  node, Cumulus switches, and upstream-router endpoint.
+- The runner can temporarily select `eth2` as the AgentlessNet external
+  interface and can restore the previous AAP ConfigMap value afterward.
+
+##### Test Tier and Owner
+
+- Local deployed lab E2E — OSAC-6202 [DEV]. From the OSAC repository root on
+  branch `e2e`, run `bash ./vlan-e2e.sh --nat-gateway`. The test uses the
+  existing local VLAN lab and a test-only static return route. It does not
+  verify remote BGP advertisement/convergence or physical hardware.
+
+##### Steps
+
+1. Create a gateway in a VirtualNetwork with no Subnets; inspect its empty
+   source set, saved ExternalIP reservation, and local `/32` route.
+2. Verify a second gateway for the same VirtualNetwork and reuse of the
+   consumed ExternalIP are rejected without additional provider state.
+3. Create a Subnet and gateway client, force a controller retry for the same
+   gateway UID, then add another Subnet and move a client into it.
+4. Remove the second Subnet and verify only its SNAT source is removed. Remove
+   the last Subnet and verify the gateway retains its ExternalIP reservation
+   and route with an empty source set.
+5. Delete the gateway and validate its matching delete artifact, natural
+   finalizer completion, route/rule/conntrack removal, peer preservation, and
+   subsequent ExternalIP release.
+6. Repeat cleanup with `bash ./vlan-e2e.sh --cleanup --nat-gateway` and verify
+   it is idempotent.
+
+##### Expected Results
+
+- A retry launches a new AAP job but preserves resource UID, ExternalIP, and
+  provider identity without duplicating owned rules.
+- A new Subnet's SNAT rule is active before Subnet readiness; a deleted
+  Subnet's rule is removed before its DHCP/interface/VLAN state is withdrawn.
+- Deleting the last Subnet leaves the NATGateway reservation and local route
+  intact until the gateway itself is deleted.
+- A failed or invalid delete result retains the NATGateway finalizer and
+  ExternalIP consumer reservation.
+- VirtualNetwork cleanup remains blocked while an ExternalIP consumer retains
+  route or NAT state for that VirtualNetwork; this check does not require the
+  Subnets to remain.
+- Successful deletion removes only the gateway-owned SNAT, forwarding, bypass,
+  route, and matching conntrack state. The peer gateway and its traffic remain
+  unchanged.
+- The ExternalIP remains allocated until NATGateway cleanup succeeds and the
+  test explicitly releases it; pool capacity returns to its initial value.
 
 ### FR-7: External IP pools
 
@@ -958,16 +1086,35 @@ All PRD requirements have test cases.
 
 All interface changes are exercised by test cases.
 
+### Environment and Boundary Gaps
+
+- The local `vlan-e2e.sh --nat-gateway` run verifies source translation and
+  return traffic through a test-only static route. It does not verify remote
+  BGP advertisement/convergence or physical hardware behavior.
+
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Total test cases | 34 |
+| Total test cases | 36 |
 | Critical | 11 |
-| High | 22 |
+| High | 24 |
 | Medium | 1 |
 | Low | 0 |
-| Automated | 33 |
+| Automated | 35 |
 | Manual | 1 |
 | Requirements with test cases | 13 / 13 |
 | Interface changes with test cases | 6 / 6 |
+
+---
+
+## Provenance
+
+Authored: revise @ design 0.11.5 - e2b0d87, workspace osac-6202-natgateway-snat @ 9eac9f81a
+Final: revise [manual] @ design 0.11.5 - e2b0d87, workspace osac-6202-natgateway-snat @ b6007aac2
+
+> Context changed between revise and revise.
+
+> This document's phase history does not include an initial /draft — structure was not verified against the template from origin.
+
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"b6007aac2","source_repo_branch":"osac-6202-natgateway-snat","commits_behind_main":0,"commits_ahead_main":17,"main_ref":"main","phases":["revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":true} -->
