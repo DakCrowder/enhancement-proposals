@@ -538,7 +538,10 @@
 - Deleting the last Subnet leaves the NATGateway reservation and local route
   intact until the gateway itself is deleted.
 - A failed or invalid delete result retains the NATGateway finalizer and
-  dependent ExternalIP, Subnets, and VirtualNetwork for recovery.
+  ExternalIP consumer reservation.
+- VirtualNetwork cleanup remains blocked while an ExternalIP consumer retains
+  route or NAT state for that VirtualNetwork; this check does not require the
+  Subnets to remain.
 - Successful deletion removes only the gateway-owned SNAT, forwarding, bypass,
   route, and matching conntrack state. The peer gateway and its traffic remain
   unchanged.
