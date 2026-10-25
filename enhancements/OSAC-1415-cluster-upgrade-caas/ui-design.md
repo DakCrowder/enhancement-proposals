@@ -21,7 +21,7 @@ superseded-by:
 
 ## Summary
 
-Tenant Users and Tenant Admins choose one direct OpenShift X→Y target from cluster details. One `Clusters.Update` changes `spec.version`. OSAC upgrades the control plane first, then automatically moves every node set to the same version. The UI offers no separate node-set upgrade action; add-on operator versions remain unchanged.
+Tenant Users and Tenant Admins choose one OpenShift target version from cluster details. One `Clusters.Update` changes `spec.version`. OSAC upgrades the control plane first, then automatically moves every node set to the same version. The UI offers no separate node-set upgrade action; add-on operator versions remain unchanged.
 
 ## Entry and versions
 
@@ -31,7 +31,7 @@ Tenant Users and Tenant Admins choose one direct OpenShift X→Y target from clu
 
 ## Upgrade dialog
 
-**Upgrade cluster** opens a compact modal with read-only Current version and one required **Target version** selector. Offer enabled ACTIVE/DEPRECATED catalog versions newer than the observed control-plane version, subject to the control-plane-first admission and skew rules; the API makes the final decision. Explain blocked actions or confirmation when observations, admission, or targets are unavailable, or cluster state is `FAILED`, `DELETING`, or `DELETE_FAILED`. `PROGRESSING` alone does not block an admitted upgrade.
+**Upgrade cluster** opens a compact modal with read-only Current version and one required **Target version** selector. Offer enabled ACTIVE/DEPRECATED catalog versions newer than the observed control-plane version, subject to the control-plane-first admission and skew rules; the API makes the final decision. These choices do not guarantee a directly reachable path in the OpenShift upgrade graph. Explain blocked actions or confirmation when observations, admission, or targets are unavailable, or cluster state is `FAILED`, `DELETING`, or `DELETE_FAILED`. `PROGRESSING` alone does not block an admitted upgrade.
 
 The modal says the control plane upgrades first and node sets automatically follow to the same version. It shows approved typical-duration and “included in this version” copy when supplied, and warns that an accepted upgrade cannot be cancelled or rolled back. It has no component picker, node-set version list, or multi-hop builder. Link the external [OpenShift Update Graph](https://access.redhat.com/labs/ocpupgradegraph/update_path/) for the tenant's path/risk check; OSAC does not verify it. **Cancel** dismisses before submission. **Upgrade cluster** changes and masks only `spec.version`; it sends no node-set, operator, or status update. Keep the selection and show API errors inline without automatic retry.
 
@@ -39,29 +39,29 @@ The modal says the control plane upgrades first and node sets automatically foll
 
 After acceptance, show an **Upgrade progress** card above the detail content. Its PatternFly `ProgressStepper` shows control-plane, automatic node-set, then finalizing status for one cluster attempt. Node sets begin only after control-plane success; they may upgrade in parallel with one another. Report success only after every node set reaches the target. The rail says **Upgrading** and affected node sets say **Updating** when their stage is active. Keep this separate from provisioning status. Show remaining time only from an approved source.
 
-The **Upgrade history** modal shows one row per cluster request: Version (X→Y), State, Started, Completed, and View release notes, with failure/timeout messages available. Include the current attempt; steady clusters show no progress card. On `TimedOut`, replace the active stepper with a warning and retain the row. Observed versions keep refreshing; do not infer success from late convergence. Admission controls the next upgrade. Do not group component entries into cluster attempts in the browser.
+The **Upgrade history** modal shows one row per cluster request: Version (X→Y), State, Started, Completed, and View release notes, with failure/timeout messages available. The progress card and history modal require the same server-defined cluster attempt. Include the current attempt; steady clusters show no progress card. On `TimedOut`, replace the active stepper with a warning and retain the row. Observed versions keep refreshing; do not infer success from late convergence. Admission controls the next upgrade. Do not group component entries into cluster attempts in the browser.
 
 ## UI implementation
 
 On the existing `/clusters/:clusterId` route, `ClusterDetailsPageContent` composes new `ClusterVersionRail({ cluster, onUpgrade, onHistory })`, `UpgradeClusterDialog({ cluster, onClose })`, `ClusterUpgradeProgress({ cluster })`, and `ClusterUpgradeHistoryModal({ cluster, onClose })` under `components/Cluster/Details/`. It owns modal visibility; the dialog owns target selection. Keep existing conditions/networking content. Update `ClusterConfigurationCard`, `ClustersTable`, and `ClusterNodeSetsTab` for observed versions. No new route or global state is needed.
 
-Reuse `useCluster`/`useClusters` and `useClusterVersions` with project scoping and `CLUSTER_VERSION_ACTIVE_LIST_FILTER`. Use `useUpdateResource(Clusters)` and also invalidate legacy `v1/clusters` query keys; its generic invalidation does not refresh the current cluster hooks. Existing 10-second polling refreshes progress. Use PatternFly modal focus handling, a labeled selector, accessible disabled reasons, and announced request errors.
+Use generic `useGetResource(Clusters, { id })` and `useListResource(Clusters, { filter })` for affected details and list reads, preserving `useProjectFilterQuery` scoping. Use `useListResource(ClusterVersions, { filter: CLUSTER_VERSION_ACTIVE_LIST_FILTER })` for target choices. Migrate affected legacy readers so `useUpdateResource(Clusters)` invalidates their matching generic query keys without a second cache path. Existing 10-second polling refreshes progress. Use PatternFly modal focus handling, a labeled selector, accessible disabled reasons, and announced request errors.
 
 ## Contract work before implementation
 
-- The [PRD](prd.md) and [backend design](design.md), including open [PR #412](https://github.com/osac-project/enhancement-proposals/pull/412), specify control plane first and automatic node-set updates from one cluster version request. Current Fulfillment still handles one component version change per edit, so backend orchestration must be implemented. Define the HCP version ceiling and recovery when a node set starts at N-3 skew; do not invent a UI recovery sequence. [UX PR #413](https://github.com/osac-project/enhancement-proposals/pull/413) still says simultaneous and needs its copy and progress stages aligned with this sequence.
-- The public API has per-component `status.upgrade_history`, not a cluster-attempt summary, aggregate state, or finalizing/ETA signal. Define these, `TimedOut`/partial outcomes, and the planned `CanUpgrade` admission signal. The selected UI generated types also lack the newer observed/history fields.
-- Define the pre-request Desired suggestion and sources for duration, version-offer copy, and release-notes URLs. `ClusterVersion` exposes none of the last three; show them only from approved data.
+- The merged [PRD](prd.md) and [backend design](design.md) still describe independent component upgrades. Open [PR #412](https://github.com/osac-project/enhancement-proposals/pull/412) proposes one `spec.version` request that upgrades the control plane first, then node sets automatically. Current Fulfillment handles one component version change per edit; this orchestration must be implemented before the full UI flow ships. Finalize the HCP version ceiling and recovery when a node set starts at N-3 skew; do not invent a UI recovery sequence. [UX PR #413](https://github.com/osac-project/enhancement-proposals/pull/413) still says simultaneous and needs its copy and progress stages aligned.
+- PR #412's public `status.upgrade_history` has one entry per component and keeps attempt IDs private. Before implementing progress and history, the backend must expose one cluster-attempt record per request with a stable public ID, source/target versions, aggregate state/times, and control-plane/node-set stages. The latest record is current/latest, with no separate upgrade status; both views consume it. Define `TimedOut`/partial/late-convergence outcomes, finalizing/ETA, and `CanUpgrade`, then update the UI generated types.
+- The merged PRD calls for directly reachable targets, while PR #412 excludes graph discovery and assigns the path/risk check to the tenant. This UI has no graph eligible-target set; the dialog links the external graph without claiming to verify a path. Define the pre-request Desired suggestion and sources for duration, version-offer copy, and release-notes URLs. `ClusterVersion` exposes none of the last three; show them only from approved data.
 
 ## Verification
 
-Vitest/Testing Library with mocked Connect transport covers rail eligibility, dialog/request/error behavior, observed versions, control-plane-first progress and automatic node-set updates, empty/current/past history, timeout followed by late convergence, and keyboard/focus behavior. Backend contract tests must prove one `spec.version` request upgrades the control plane before node sets and reports success only after all components reach the target.
+Vitest/Testing Library with mocked Connect transport covers rail eligibility, catalog/admission choices and the external graph warning, dialog/request/error behavior, generic query invalidation, observed versions, control-plane-first stages, one-attempt progress/history, timeout followed by late convergence, and keyboard/focus behavior. Backend contract tests must prove one `spec.version` request upgrades the control plane before node sets and reports aggregate outcomes, with success only after all components reach the target.
 
 ---
 
 ## Provenance
 
-Authored: revise @ ui-design 0.1.0 - e2b0d87, workspace main @ d81c18823
-Phases: plan, review-api, revise, revise
+Authored: respond @ ui-design 0.1.0 - e2b0d87, workspace main @ d81c18823
+Phases: plan, review-api, revise, revise, respond
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"ui-design","workflow_version":"0.1.0","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":446,"main_ref":"main","phases":["plan","review-api","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"ui-design","workflow_version":"0.1.0","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":446,"main_ref":"main","phases":["plan","review-api","revise","revise","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
