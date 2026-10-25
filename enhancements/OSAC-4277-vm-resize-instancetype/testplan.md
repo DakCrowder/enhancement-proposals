@@ -47,6 +47,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists in RUNNING state with instance_type "small"
   (e.g., 2 vCPUs, 4 GiB)
 - An InstanceType "medium" exists in ACTIVE state (e.g., 4 vCPUs, 8 GiB)
@@ -72,6 +73,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists in STOPPED state with instance_type "small"
 - An InstanceType "medium" exists in ACTIVE state
 
@@ -98,6 +100,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists in RUNNING state with instance_type "small"
 - InstanceTypes "medium" and "large" exist in ACTIVE state
 
@@ -124,6 +127,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists in RUNNING state with a non-GPU InstanceType
 - An InstanceType "gpu-type" exists in ACTIVE state with GPU spec
   (pciDeviceSelector, resourceName, count)
@@ -151,6 +155,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists in RUNNING state with instance_type "medium"
   (4 vCPUs, 8 GiB)
 - An InstanceType "small" exists in ACTIVE state (2 vCPUs, 4 GiB)
@@ -175,6 +180,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists with instance_type "a" (2 vCPUs, 8 GiB)
 - An InstanceType "b" exists in ACTIVE state (4 vCPUs, 4 GiB)
 
@@ -200,6 +206,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists with instance_type "current" (ACTIVE)
 - An InstanceType "deprecated-type" exists in DEPRECATED state with
   replacement "replacement-type" and obsolescence date set
@@ -224,6 +231,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists with instance_type "current" (ACTIVE)
 - An InstanceType "obsolete-type" exists in OBSOLETE state
 
@@ -246,6 +254,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists with instance_type "current"
 
 ##### Steps
@@ -268,6 +277,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists with instance_type "current" (ACTIVE)
 
 ##### Steps
@@ -290,6 +300,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance exists with instance_type "deprecated-type"
 - "deprecated-type" is now in OBSOLETE state
 
@@ -314,6 +325,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance exists in RUNNING state
 - KubeVirt deployment does not support CPU/memory hot-plug for the
   requested change (or `VMLiveUpdateFeatures` is not enabled)
@@ -340,6 +352,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A ComputeInstance has `RestartRequired` condition = True after a resize
 - The ComputeInstance is in RUNNING state
 
@@ -367,6 +380,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A fully provisioned ComputeInstance in RUNNING state
 - Multiple InstanceTypes exist with different vCPUs/memory configurations
 - Follows patterns in `tests/e2e/vmaas/regression/test_compute_instance_instance_type.py`
@@ -405,6 +419,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A multi-node cluster with KubeVirt hot-plug enabled
   (`vmRolloutStrategy: LiveUpdate`, `workloadUpdateMethods: [LiveMigrate]`)
 - A fully provisioned ComputeInstance in RUNNING state with a

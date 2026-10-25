@@ -37,6 +37,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A bare metal instance is provisioning; its API status has `PROVISIONED`
   `status = False` with `reason = Provisioning` and a curated `message`, and
   `READY` not yet `True`.
@@ -63,6 +64,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A bare metal instance has completed Host Allocation and is in the Provisioning
   stage.
 
@@ -89,6 +91,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Fulfillment reconciler unit test harness with `BareMetalInstance` CR fixtures
   carrying operator lifecycle conditions in varying orders.
 
@@ -116,6 +119,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A CR fixture with all provisioning/network conditions True but the instance not
   yet powered-on ready, and a second fixture that is additionally available/ready.
 
@@ -139,6 +143,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A CR fixture for an instance that requests no network attachment, driven to
   provisioning completion (network conditions satisfied trivially).
 
@@ -163,6 +168,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The bare-metal-fulfillment-operator `api/v1alpha1` package, which exports the
   `HostCondition*` constants and the pure `DeriveProvisioningProgress` derivation
   used by the fulfillment reconciler. This is an operator-package unit test (it
@@ -210,6 +216,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An instance that reached readiness: API `PROVISIONED = True` (`reason
   Provisioned`) and `READY = True` (`reason Ready`).
 
@@ -238,6 +245,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An instance whose Provisioning stage failed: `PROVISIONED = False`,
   `reason = ProvisionJobFailed`, with the IC-5 curated `message`.
 
@@ -272,6 +280,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Reconciler test harness with a table of fixtures, one per IC-5 failure reason
   (`NoMatchingHosts`, `HostAllocationFailed`, `ProvisionJobFailed`,
   `NetworkAttachmentFailed`, `NetworkHandoffFailed`, `IPDiscoveryFailed`,
@@ -310,6 +319,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A stage failure whose underlying backend error contains an internal stack trace
   or raw AAP/backend error string.
 
@@ -336,6 +346,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment reconciler and the osac-operator feedback controller running against
   a kind cluster, at steady state (no in-flight proto diff), for an instance whose
   CR is at the Provisioning stage.
@@ -373,6 +384,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active instance in the Network Setup stage.
 
 ##### Steps

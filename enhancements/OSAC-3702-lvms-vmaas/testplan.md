@@ -40,6 +40,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A `StorageBackend { provider: lvms }` named `local` and a `local` tier are registered.
 - A `StorageBackend { provider: vast }` is also registered.
 
@@ -60,6 +61,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The `local` tier and its `osac-csi` StorageClass exist.
 
 ##### Steps
@@ -80,6 +82,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A single-node cluster with LVMS installed (OSAC-3011) and `OSAC_ENABLE_STORAGE_CONTROLLER=true` **and** `lvms.enabled` set.
 
 ##### Steps
@@ -99,6 +102,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - OSAC-3011's per-tenant `provisioner: topolvm.io` StorageClass previously existed on the control-plane path.
 
 ##### Steps
@@ -118,6 +122,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A deployment where the dev/test gate is off (`lvms.enabled=false` in the interim, or a production `deployment.profile` once the flag exists).
 
 ##### Steps
@@ -138,6 +143,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The OSAC CSI driver is deployed.
 
 ##### Steps
@@ -156,6 +162,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A `local`-tier PVC with `WaitForFirstConsumer`; a pod that consumes it.
 
 ##### Steps
@@ -176,6 +183,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The node plugin runs on node N.
 
 ##### Steps
@@ -194,6 +202,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A `local` tier resolving to `provider: lvms`.
 
 ##### Steps
@@ -212,6 +221,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A network tier (e.g. VAST).
 
 ##### Steps
@@ -233,6 +243,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Single-node VMaaS with the `local` tier configured.
 
 ##### Steps
@@ -253,6 +264,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A running ComputeInstance with a `local`-tier disk from TC-R4-01.
 
 ##### Steps
@@ -273,6 +285,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A running ComputeInstance with a `local`-tier disk.
 
 ##### Steps
@@ -292,6 +305,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A Volume whose `LogicalVolume` CR has already been deleted out of band.
 
 ##### Steps
@@ -310,6 +324,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A `LogicalVolume` whose `status.volumeID` is never set within the provisioner's bounded poll timeout.
 
 ##### Steps
@@ -330,6 +345,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A `local` tier configured; a scheduled consumer.
 
 ##### Steps
@@ -349,6 +365,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - An AVAILABLE `local`-tier Volume.
 
 ##### Steps
@@ -369,6 +386,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A node whose VG cannot satisfy the requested size.
 
 ##### Steps
@@ -387,6 +405,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A node whose VG fails the first `CreateVolume` with `ResourceExhausted` (fault-injected), then has capacity for a retry.
 
 ##### Steps
@@ -408,6 +427,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The private proto with `VolumeTopology` is generated.
 
 ##### Steps
@@ -430,6 +450,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The generated proto types.
 
 ##### Steps
@@ -450,6 +471,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A single-node VMaaS cluster with the `local` tier configured (the full chain: IC-1 through IC-8 deployed).
 
 ##### Steps
@@ -473,6 +495,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The operator CRD with the additive `topology` field is installed.
 
 ##### Steps
@@ -492,6 +515,7 @@ T-order:
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The operator Helm chart with the new RBAC is deployed.
 
 ##### Steps

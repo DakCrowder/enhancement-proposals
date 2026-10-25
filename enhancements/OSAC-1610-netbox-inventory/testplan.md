@@ -300,6 +300,10 @@ client. No external dependencies.
 
 #### TC-UNIT-001: Parse Valid NetBox Configuration
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** YAML config with endpoint, tokenFile, caCertFile (optional), and valid mounted-file fixtures
 - **Action:** Call NewNetBoxClient() with valid config
 - **Expected:** Client initialized; no error; endpoint stored correctly
@@ -310,11 +314,19 @@ client. No external dependencies.
 
 #### TC-UNIT-002: Reject Missing Endpoint URL
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Config with empty endpoint
 - **Action:** NewNetBoxClient()
 - **Expected:** Error: "endpoint required"
 
 #### TC-UNIT-003: Load API Token from Mounted File
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Temporary mounted-Secret filesystem fixture for
   `/etc/osac/secrets/osac-netbox-api-token/token`, containing a synthetic value
@@ -329,6 +341,10 @@ client. No external dependencies.
 
 #### TC-UNIT-004: Load CA Certificate from Optional Mounted File
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Config with caCertFile pointing to a mounted `ca.crt` PEM fixture
 - **Action:** Client initialization; TLS config built
 - **Expected:** CA cert added to http.Client transport; valid TLS handshake with cert-signed server
@@ -337,6 +353,10 @@ client. No external dependencies.
   startup without falling back to system trust or exposing file contents.
 
 #### TC-UNIT-005: Validate Fixed Integration Custom Field Schema
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Paginated metadata fixtures contain the shared fixed integration
   fields. Vary `osac_managed` to missing, required, text type, default `true`, wrong
@@ -356,6 +376,10 @@ client. No external dependencies.
 
 #### TC-UNIT-006: TLS Validation Failure on Invalid Certificate
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Table-driven cases: self-signed HTTPS endpoint without its CA,
   direct `http://` endpoint, and an HTTPS endpoint redirecting to HTTP or a
   different authority
@@ -365,6 +389,10 @@ client. No external dependencies.
   rejected and the Authorization header is not observed by the redirect target
 
 #### TC-UNIT-007: HostSelector Resolution and Custom-Field Extraction
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Persisted selector fixture
   `{"cpu_cores":"16","gpu_model":"a100","memory_gb":"128"}`;
@@ -378,6 +406,10 @@ client. No external dependencies.
 
 #### TC-UNIT-008: Custom-Field Name Syntax and Length Validation
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Table-driven selectors include empty keys, spaces, hyphens,
   slashes, punctuation, non-ASCII characters, and 51-character names; positive
   cases include one-character and 50-character names with letters/digits/underscores.
@@ -390,6 +422,10 @@ client. No external dependencies.
 ### Startup Validation
 
 #### TC-UNIT-009: Validate Co-Requirement — NetBox Requires Metal3 Management
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Operator config with `inventory.type=netbox`; vary wrong/missing
   `management.type`, empty Metal3 namespace, and `inventory.hostClass=netbox`.
@@ -409,6 +445,10 @@ client. No external dependencies.
 
 #### TC-UNIT-010: Token Header Correctly Set
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock HTTPS server; expects Authorization header
 - **Action:** FindFreeHost() call
 - **Expected:** HTTP request includes `Authorization: Token <fixture value>`;
@@ -416,11 +456,19 @@ client. No external dependencies.
 
 #### TC-UNIT-011: Handle 401 Unauthorized — Permanent Failure
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock server returns 401 on device list request
 - **Action:** FindFreeHost()
 - **Expected:** Error returned (not retried); error message: "NetBox API authentication failed"; no token in error
 
 #### TC-UNIT-012: Handle 403 Forbidden — Permanent Failure
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Mock server returns 403 (insufficient permissions)
 - **Action:** FindFreeHost()
@@ -428,11 +476,19 @@ client. No external dependencies.
 
 #### TC-UNIT-013: Handle 404 Not Found — Permanent Failure
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock server returns 404 on invalid endpoint path
 - **Action:** FindFreeHost()
 - **Expected:** Error returned; message includes field/resource name; no exposure of full API response
 
 #### TC-UNIT-014: Handle 5xx Server Error — Transient Failure with Retry
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Mock server returns 500 on the first two device-list GET calls,
   then 200 on the third; metadata discovery succeeds independently
@@ -446,6 +502,10 @@ client. No external dependencies.
 
 #### TC-UNIT-015: Handle Network Timeout — Transient Failure with Retry
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock server delays a read-only GET indefinitely; client timeout = 500ms
 - **Action:** FindFreeHost()
 - **Expected:** Timeout error; retries up to 3 times; returns error if all fail
@@ -455,11 +515,19 @@ client. No external dependencies.
 
 #### TC-UNIT-016: Handle Connection Refused — Transient Failure with Retry
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Endpoint unreachable
 - **Action:** FindFreeHost()
 - **Expected:** Connection error; retries; returns error after retries exhausted
 
 #### TC-UNIT-017: Error Messages Never Expose Credentials
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Config with a test-local synthetic fixture token
 - **Action:** Trigger 401 error; capture error message and logs
@@ -467,6 +535,10 @@ client. No external dependencies.
   recognizable token pattern
 
 #### TC-UNIT-018: Handle 412 Precondition Failed — Race Loss
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Mock NetBox PATCH returns 412; the subsequent ownership GET
   reports active status with another requesting UID as owner.
@@ -482,6 +554,10 @@ client. No external dependencies.
 
 #### TC-UNIT-019: Distinguish 412 from Other 4xx Errors
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock returns 400 Bad Request vs 412 Precondition Failed; for
   412, the follow-up GET confirms an active device owned by another UID
 - **Action:** AssignHost PATCH
@@ -494,12 +570,20 @@ client. No external dependencies.
 
 #### TC-UNIT-020: First Writer Wins
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock NetBox returns device with ETag: W/"2026-01-01T00:00:00.000000+00:00"
 - **Action:** PATCH with If-Match: W/"2026-01-01T00:00:00..." → mock returns 200 OK with new ETag
 - **Expected:** AssignHost returns `(host, nil)` after resource setup;
   `host.Ready` reflects the mocked BMH readiness state, not the error return.
 
 #### TC-UNIT-021: Second Writer Gets 412
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Distinct requester UIDs; mock returns the same original ETag to
   both, and the losing request's follow-up GET reports the winner's active claim
@@ -509,6 +593,10 @@ client. No external dependencies.
 
 #### TC-UNIT-022: Race Sequence with Goroutines
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Two goroutines with distinct context UIDs both call AssignHost
   on device-42 and capture the same ETag from GET
 - **Action:** First PATCH succeeds (200); second PATCH gets 412, then its
@@ -516,6 +604,10 @@ client. No external dependencies.
 - **Expected:** Exactly one goroutine returns `(host, nil)`; exactly one returns `(nil, nil)`; device-42 has status=active and osac_instance_id set to winner's ID, not loser's. Readiness is reported by `host.Ready`, not the error return.
 
 #### TC-UNIT-023: Concurrent Custom-Field FindFreeHost
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** 3 staged, managed devices with empty owners and integer
   `cpu_cores=16`; 2 tenants request `{"cpu_cores":"16"}` simultaneously
@@ -531,6 +623,10 @@ client. No external dependencies.
 
 #### TC-UNIT-024: Custom-Field Pass-Through from Resolved HostSelector
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Resolved `spec.selector.hostSelector` is
   `{"cpu_cores":"16","gpu_model":"a100","memory_gb":"128"}` with valid metadata
 - **Action:** Build the device query after metadata validation
@@ -540,6 +636,10 @@ client. No external dependencies.
 
 #### TC-UNIT-025: Selector Values Determine the Match
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Text field `gpu_model`; one A100 device stores `"a100"`, one H100
   device stores `"h100"`, and one device stores `"A100"`
 - **Action:** Call FindFreeHost with `{"gpu_model":"a100"}`, then
@@ -548,6 +648,10 @@ client. No external dependencies.
   case remains significant and values are neither ignored nor part of field names.
 
 #### TC-UNIT-026: Selector Key Is Not Rewritten
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Pre-created text field `Placement_Zone` with value `"Lab A"`;
   the instance type's hardware metadata describes a different zone
@@ -564,6 +668,10 @@ client. No external dependencies.
 
 #### TC-UNIT-027: Reject Reserved Names and Lookup Injection
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Parameterize keys `osac_managed`, `osac_instance_id`,
   `osac_bmc_address`, `osac_boot_mac`,
   `cf_cpu_cores`, `cf_osac_managed`, `gpu_model__ic`, `cpu_cores__gte`,
@@ -575,6 +683,10 @@ client. No external dependencies.
 
 #### TC-UNIT-028: Server-Side Custom-Field Filtering — Matching Device
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Managed staged device has empty owner and integer `cpu_cores=16`
 - **Action:** FindFreeHost with `{"cpu_cores":"16"}`
 - **Expected:** Device returned after local validation; query includes
@@ -583,6 +695,10 @@ client. No external dependencies.
 
 #### TC-UNIT-029: Server-Side Custom-Field Filtering — Different Value
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Valid text schema for `gpu_model`; only `"a100"` devices exist;
   mock returns an empty list for `cf_gpu_model=v100`
 - **Action:** FindFreeHost with `{"gpu_model":"v100"}`
@@ -590,6 +706,10 @@ client. No external dependencies.
   unknown or incompatible schema instead follows TC-UNIT-051's error path.
 
 #### TC-UNIT-030: Superset Match — Extra Fields and Unrelated Tags
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Eligible device has `cpu_cores=16`, `gpu_model="a100"`,
   `memory_gb=128`, and unrelated tags; add an unused JSON custom field too
@@ -600,6 +720,10 @@ client. No external dependencies.
 ### Capability Schema and Defensive Validation
 
 #### TC-UNIT-049: Paginated Metadata Discovery and Wire Shapes
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Serve `GET /api/extras/custom-fields/?object_type=dcim.device`
   over multiple pages with required fields only on later pages. Use captured
@@ -616,6 +740,10 @@ client. No external dependencies.
 
 #### TC-UNIT-050: Refresh Capability Schema on Every Search
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Start with the fixed schema only. After startup, add an exact
   text field `placement_zone` and eligible device value `"west"`; return a
   changed metadata response on each subsequent discovery.
@@ -626,6 +754,10 @@ client. No external dependencies.
   call refreshes metadata and does not use a stale startup cache or whitelist.
 
 #### TC-UNIT-051: Invalid Requested Schema Is Not Empty Capacity
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** For `placement_zone`, vary missing schema, `object_types`
   excluding `dcim.device`, disabled filtering, loose filtering, present
@@ -641,6 +773,10 @@ client. No external dependencies.
   tag, or loose-filter fallback. Exact scalar text schema succeeds.
 
 #### TC-UNIT-052: Supported Scalar Values and Invalid Inputs
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Exact-filter metadata for integer `cpu_cores`, boolean
   `accelerated`, text `placement_zone`, and select `accelerator` whose stored
@@ -660,6 +796,10 @@ client. No external dependencies.
 
 #### TC-UNIT-053: Revalidate Every Returned Typed Capability
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock deliberately ignores filters and returns decoys before one
   valid row for selectors `{"cpu_cores":"16","accelerated":"false",
   "gpu_model":"a100","accelerator":"a100"}`. Decoys individually have
@@ -678,6 +818,10 @@ client. No external dependencies.
 
 #### TC-UNIT-054: Escape Exact Values Without Query Injection
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Exact text values include `&status=active`, `a+b`, `x=y`,
   `100%`, `#fragment`, Unicode, and internal spaces such as `Lab A`.
   Separate negative cases are ` a100`, `a100 `, surrounding tabs, and exact
@@ -695,6 +839,10 @@ client. No external dependencies.
 
 #### TC-UNIT-055: Claim and Release Preserve Administrator Metadata
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Device has Boolean `osac_managed=true`, shared capabilities,
   an unrelated nested custom field, and unrelated tags. Snapshot its data.
 - **Action:** AssignHost, retry with the same owner, then UnassignHost;
@@ -708,6 +856,10 @@ client. No external dependencies.
 
 #### TC-UNIT-056: Empty Owner Forms and Strict Pool Membership
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Table of staged devices with owner missing, `null`, `""`,
   whitespace, a nonempty ID, or a wrong JSON type; cross with pool `true`,
   `false`, missing, `null`, string `"true"`, and numeric `1`. Capabilities match.
@@ -718,6 +870,10 @@ client. No external dependencies.
   them. Pool defaults do not opt devices into allocation.
 
 #### TC-UNIT-058: Select Stored Values Across Community Response Shapes
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Exact select schema and selector `{"accelerator":"a100"}`.
   Parameterize candidate values as Community 4.6.10 string `"a100"` and
@@ -735,6 +891,10 @@ client. No external dependencies.
 ### Fulfillment-Service Selector Projection
 
 #### TC-UNIT-057: Project New Catalog Types with Existing Sources Unchanged
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Location:**
   `osac/fulfillment-service/internal/controllers/baremetalinstance/baremetalinstance_reconciler_function_test.go`,
@@ -765,6 +925,10 @@ client. No external dependencies.
 
 #### TC-UNIT-031: Search Remains Scoped to the Requested Profile
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Five managed staged devices with empty owners; only one matches
   `{"cpu_cores":"16","gpu_model":"a100"}`. Others have spare capacity
   with different CPU/GPU values. Include non-pool/offline/owned decoys.
@@ -778,6 +942,10 @@ client. No external dependencies.
 
 #### TC-UNIT-032: Next Search Excludes the Newly Claimed Candidate
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Two devices match one requested profile; AssignHost claims the
   first with valid AllocationContext. The next mock list deliberately returns
   both rows, including the first device's active status and populated owner.
@@ -787,6 +955,10 @@ client. No external dependencies.
   state, not an inventory capacity metric.
 
 #### TC-UNIT-033: No Match Does Not Fall Back to Unrelated Capacity
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** All matching-profile devices are active with owners, but other
   managed staged devices match different capability values.
@@ -801,6 +973,10 @@ client. No external dependencies.
 
 #### TC-UNIT-034: Query Returns Only Staged Devices with Managed Pool Flag
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock response includes 10 devices with matching capabilities:
   6 staged with Boolean `osac_managed=true` and empty owners, 2 offline,
   and 2 staged with `osac_managed=false`
@@ -811,6 +987,10 @@ client. No external dependencies.
 
 #### TC-UNIT-035: No Candidates — All Devices Already Assigned
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** NetBox has 5 pool devices; three have status=active and a non-empty `osac_instance_id`, and two have status=staged with a stale non-empty `osac_instance_id`
 - **Action:** FindFreeHost(); the mock returns the staged stale-owner rows
   despite the empty-owner filter to exercise the defensive client-side check
@@ -819,11 +999,19 @@ client. No external dependencies.
 
 #### TC-UNIT-036: No Candidates — Empty Device Pool
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** NetBox returns 0 devices matching pool
 - **Action:** FindFreeHost()
 - **Expected:** nil returned; no error
 
 #### TC-UNIT-037: Pagination of Large Device Lists
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** NetBox returns 250 devices over pages of 100, 100, and 50;
   only the last device passes all local pool/status/owner/capability checks
@@ -835,6 +1023,10 @@ client. No external dependencies.
 ### AssignHost Idempotency and Race Conditions
 
 #### TC-UNIT-059: AllocationContext Is Separate from Assignment Labels
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** BMI with UID/name/namespace, persisted selector
   `{"cpu_cores":"16","gpu_model":"a100"}`, trusted tenant/owner-reference
@@ -853,6 +1045,10 @@ client. No external dependencies.
   existing allocation/release behavior.
 
 #### TC-UNIT-060: Revalidate Persisted Candidate Before a New Claim
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Persist ExternalHostID from an earlier FindFreeHost; a new client
   instance has no discovery cache. Context contains the BMI's original
@@ -875,6 +1071,10 @@ client. No external dependencies.
 
 #### TC-UNIT-038: Successful Assignment
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Device found unassigned; AssignHost called with instanceID "inst-123"
 - **Action:** AssignHost with `inventoryHostID="baremetal/netbox-42"` and
   `InstanceID="inst-123"`
@@ -889,6 +1089,10 @@ client. No external dependencies.
   only in memory and supplies them to the runtime Secret manager.
 
 #### TC-UNIT-039: Idempotent Retry — Same Assignment ID
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Device already has status=active and osac_instance_id = "inst-123"
 - **Action:** AssignHost with the same host ID and AllocationContext UID again
@@ -905,11 +1109,19 @@ client. No external dependencies.
 
 #### TC-UNIT-040: Race Condition — Device Assigned to Different Instance
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Device already has status=active and osac_instance_id = "inst-999" (another instance claimed it)
 - **Action:** AssignHost with that host ID and `AllocationContext.InstanceID="inst-123"`
 - **Expected:** Read-then-compare detects mismatch; returns (nil, nil) — race lost
 
 #### TC-UNIT-041: Crash Recovery — Assignment Persisted
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Device has status=active and osac_instance_id = "inst-123" (from previous AssignHost call)
 - **Action:** Operator crashes and restarts; reconciliation retries AssignHost with same ID
@@ -936,6 +1148,10 @@ client. No external dependencies.
 
 #### TC-UNIT-042: ETag Capture on Read
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Mock GET returns device with ETag header: W/"2026-01-01T00:00:00.000000+00:00"
 - **Action:** AssignHost step 1 reads device
 - **Expected:** ETag value is captured and stored for use in step 3 PATCH
@@ -943,6 +1159,10 @@ client. No external dependencies.
   claim PATCH; no unconditional update is allowed.
 
 #### TC-UNIT-043: If-Match Sent on PATCH
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** AssignHost reads a candidate, refreshes schema, then receives a
   different ETag on the final detail GET that passes all eligibility checks
@@ -955,6 +1175,10 @@ client. No external dependencies.
 ### UnassignHost Idempotency
 
 #### TC-UNIT-061: Requester UID Authorizes Every Release or Compensation
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Requested context UID `inst-123`. Parameterize: NetBox owner
   `inst-999` with matching `inst-999` BMH/Secret; matching NetBox owner but
@@ -976,11 +1200,19 @@ client. No external dependencies.
 
 #### TC-UNIT-044: Successful Deassignment
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Device has status=active and osac_instance_id = "inst-123"
 - **Action:** UnassignHost with that host ID and requesting AllocationContext
 - **Expected:** Device PATCH sets status=staged and clears osac_instance_id; returns nil
 
 #### TC-UNIT-045: Idempotent Retry — Already Unassigned
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Device already has status=staged and osac_instance_id = nil
   (unassigned); both BMH and Secret are absent
@@ -992,12 +1224,20 @@ client. No external dependencies.
 
 #### TC-UNIT-046: Ownership Guard — BMH Belongs to Different Instance
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Device has status=active and osac_instance_id = "inst-123";
   requesting UID is `inst-123`, but BMH `spec.consumerRef.uid` is `inst-888`
 - **Action:** UnassignHost with that host ID and requesting AllocationContext
 - **Expected:** Returns an ownership-conflict error; does not delete the BMH or BMC Secret and does not PATCH NetBox
 
 #### TC-UNIT-047: 412 During Unassignment — Retry from Read
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Mock GET returns device assigned to our instance; PATCH returns 412 Precondition Failed
 - **Action:** After owned resources are absent, UnassignHost sends the
@@ -1022,6 +1262,10 @@ client. No external dependencies.
 
 #### TC-UNIT-048: Resolve Logical-Port MACs Through Inventory
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Persist `externalHostID=baremetal/netbox-42`. Provide NetBox
   responses with a valid `data-0` mapping, no mapping, a mapping without
   `data-0`, malformed mapping data, and a failed device read.
@@ -1035,6 +1279,10 @@ client. No external dependencies.
 ### Device ID and Recovery Binding
 
 #### TC-UNIT-062: Generate Kubernetes-Safe ID-Derived Names
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** Candidate device ID `42`; parameterize `device.name` as
   `worker-rack3-07`, empty, null, duplicate, uppercase, whitespace, or other
@@ -1053,6 +1301,10 @@ client. No external dependencies.
 
 #### TC-UNIT-063: Use Persisted Namespace-Qualified ID Identity
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Complete binding `baremetal/netbox-42`; configure Metal3
   namespace `baremetal`. Parameterize wrong namespace, missing slash, wrong
   prefix, zero/negative/noncanonical/overflowing ID, mismatched BMH name, and
@@ -1069,6 +1321,10 @@ client. No external dependencies.
 
 #### TC-UNIT-064: Device Name Changes Cannot Redirect Recovery
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 - **Setup:** Persisted binding `baremetal/netbox-42` and BMH/Secret
   `netbox-42`. Parameterize a raw rename, empty-to-name transition,
   name-to-empty transition, site/region change, and a 404 for ID `42` while ID
@@ -1083,6 +1339,10 @@ client. No external dependencies.
   and foreign-owner resources are never touched.
 
 #### TC-UNIT-065: Cleanup Intent and Absence Checkpoints Gate Side Effects
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Setup:** A owns the claim; parameterize BMC Secret and BMH preparation
   failures. Use controller mocks that can reject each BMI checkpoint update.
@@ -1122,6 +1382,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-001: Allocate Host via BareMetalInstance
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** envtest API server with bare-metal-fulfillment-operator;
   **mock NetBox HTTPS server** (`httptest.NewTLSServer`); Kubernetes Secret with API token
 - **Prerequisites:**
@@ -1155,6 +1419,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-002: Deallocate Host via BareMetalInstance Deletion
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** BareMetalInstance allocated to device; host ready
 - **Action:**
   1. Delete BareMetalInstance
@@ -1167,6 +1435,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
      owner; all administrator metadata is preserved
 
 #### TC-INT-003: Host Preparation Failure Rolls Back the Claim
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** BareMetalInstance has claimed a staged device; the mock OSAC
   Secret resolution/runtime BMC Secret or BareMetalHost creation fails after
@@ -1194,6 +1466,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-013: Network Failure Recovery
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** BareMetalInstance allocation is in progress; the mock NetBox server
   returns 5xx for 5 seconds
 - **Action:** Wait for the adapter retry budget and controller backoff, then
@@ -1202,6 +1478,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   details to the tenant
 
 #### TC-INT-004: Permanent Auth Failure
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Operator initializes with a valid token, then NetBox revokes it.
 - **Action:**
@@ -1218,6 +1498,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-005: Schema Validation Failure on Startup
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Parameterized NetBox metadata missing either `osac_managed` or
   `osac_instance_id`, assigned to the wrong model, or incompatible with the
   Boolean/default-false/exact pool or optional-text/exact owner contract
@@ -1229,6 +1513,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   3. Admin must create field before operator can start
 
 #### TC-INT-006: Configuration Update After Operator Restart
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Drain all pending/allocated NetBox BMIs and verify cleanup, then
   update Helm values from one endpoint to a new endpoint with prepared inventory
@@ -1244,6 +1532,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-007: Concurrent Assignment with ETag Protection
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Two BareMetalInstance CRs with distinct UIDs request the same
   capability selector; only one device matches in mock NetBox
 - **Action:** Reconcile both BMIs through the existing controller and its
@@ -1255,6 +1547,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   serialization with independent adapter calls to test stale-ETag races.
 
 #### TC-INT-008: Assignment and API Error Counters
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Envtest operator with a registered metrics endpoint and valid
   schema; mock can return successful assignment, 412, and 401 responses.
@@ -1271,6 +1567,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-009: Server-Side Custom-Field Filtering Verification
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** envtest operator; mock schema and 10 eligible devices: 5 with
   `gpu_model="a100"`, 5 with `gpu_model="v100"`
 - **Action:** Resolve `spec.selector.hostSelector` as `{"gpu_model":"a100"}`
@@ -1280,6 +1580,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   is claimed. TC-INT-016 verifies actual server filtering independently.
 
 #### TC-INT-010: Capability Mismatch — Zero Results
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Valid text `gpu_model` schema; only `"a100"` devices exist
 - **Action:** Create a BMI with `spec.selector.hostSelector` set to
@@ -1294,6 +1598,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-011: Capability Value Update on Device
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Eligible device has integer `memory_gb=64`
 - **Action:** Admin changes the value to `128`; create a new
   BareMetalInstanceType for subsequent requests, leaving referenced types
@@ -1302,6 +1610,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   `{"memory_gb":"128"}` matches. OSAC has not edited the capability.
 
 #### TC-INT-012: Cross-Backend Non-Regression
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Test cluster configured with Metal3 backend; deploy second cluster with NetBox backend
 - **Action:**
@@ -1318,6 +1630,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-014: New Instance Type After Operator Startup
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Operator initialized with the fixed schema and original shared
   capabilities; no `placement_zone` field exists yet. Mock can update its
   metadata and device responses while the controller remains running.
@@ -1333,6 +1649,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   same-owner assignment continues without rediscovery of capability schema.
 
 #### TC-INT-024: Persisted Candidate Revalidation and Wrong-Requester Deletion
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** BMF envtest with BMIs A and B, distinct UIDs, and one candidate
   initially satisfying A's persisted selector. Reconcile A until ExternalHostID
@@ -1363,6 +1683,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   the existing offboard behavior; other backends' matching is unchanged.
 
 #### TC-INT-025: Wait for BMH and Secret Absence Before Release
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** A owns the NetBox claim, BMH ConsumerRef UID, and operator-managed
   Secret. Add test finalizers to hold BMH deletion, then Secret deletion;
@@ -1400,6 +1724,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-030: Completed Release Survives Crash and Immediate Reallocation
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** A owns the claim/BMH/Secret and has its full saved binding.
   Exercise normal deletion and preparation compensation independently.
 - **Action:**
@@ -1419,6 +1747,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
   a host name nor another resource's matching name grants cleanup authority.
 
 #### TC-INT-026: Trusted Tenant Metadata on Owned Per-Host Resources
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Two envtest BMIs have different trusted tenant and owner-reference
   metadata; vary the input owner-reference annotation to absent or incorrect.
@@ -1451,6 +1783,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 ### Helm Configuration and Deployment
 
 #### TC-INT-027: Render and Install the NetBox Plus Metal3 Configuration
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Location:** Chart checks alongside
   `osac/bare-metal-fulfillment-operator/charts/operator/` and
@@ -1505,6 +1841,10 @@ and `baremetalinstance_metal3_integration_test.go`) for envtest setup,
 
 #### TC-INT-028: Persist and Clear the Complete Host Binding Atomically
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Location:** Extend the BMF envtest/controller patterns used by TC-INT-024.
 - **Setup:** Candidate ID `42`, matching capabilities, and
   no BMH/Secret. Watch BMI updates and record NetBox writes. Inject a failed
@@ -1537,6 +1877,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-029: Community ID Identity and Numeric-ID Recovery
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Real devices with ID `42` and IDs `43`/`99`, including named,
   empty-name, duplicate-name, case-equivalent-name, allocated, and unavailable
   variants. Register fabric servers as `netbox-42` and `netbox-43`; no server
@@ -1558,6 +1902,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-015: Community Metadata Discovery and Pool Default
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Administrator creates all fixed fields and enough unrelated
   fields to force pagination, plus exact scalar capability fields. Create a
   device without setting `osac_managed` and a second with it explicitly true.
@@ -1574,6 +1922,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-016: Community AND Semantics Across Distinct Fields
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Real devices include one exact shared-fixture match and decoys
   differing individually in `cpu_cores`, `gpu_model`, `memory_gb`, pool flag,
   native status, or owner. All schemas are valid and exact-filtered.
@@ -1588,6 +1940,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
   no partial-match device is claimed.
 
 #### TC-INT-017: Community Empty-Owner Representations
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Three otherwise eligible devices: owner omitted when created,
   owner set to JSON null, and owner set to empty string. Add decoys with an
@@ -1608,6 +1964,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-018: Community Invalid Schema Fails Before Device Query
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Valid runtime adapter and exact text field `placement_zone`;
   administrator successively removes it, binds it only to another model,
   disables its filter, changes to loose filtering, or replaces it with each
@@ -1627,6 +1987,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
   such, with adapter rejection covered by TC-UNIT-051.
 
 #### TC-INT-019: Community Scalar Filtering and Stored Choice Values
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Exact-filter integer, Boolean, text, and select fields; a select
   choice stores `a100` with label `NVIDIA A100`. Devices cover integer `0`,
@@ -1652,6 +2016,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-020: Community Tags Are Independent and Metadata Survives
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Two identically eligible devices, one with no tags and one with
   unrelated tags including a legacy `managed-by-osac` tag; a third has the
   legacy tag but `osac_managed=false`. Include unrelated custom fields.
@@ -1672,6 +2040,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
   Community API preserves other fields through its partial-update merge.
 
 #### TC-INT-021: Community Conditional Claims and Release Races
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** One real eligible device; two independent adapter calls for
   distinct instance IDs; a barrier allows both GETs to capture the same real
@@ -1708,6 +2080,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
 
 #### TC-INT-022: Community Exact Escaped String Filtering
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 - **Setup:** Exact text field stores `&status=active`, `a+b`, `x=y`, Unicode,
   and `Lab A` on otherwise eligible devices; add active and case/space
   near-match decoys.
@@ -1723,6 +2099,10 @@ capability such as `If-Match` must fail compatibility, not skip the assertion.
   device-list requests; they cannot select unset/null capability fields.
 
 #### TC-INT-023: Community Capability Added After Startup
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Setup:** Adapter running against real Community API with no
   `placement_zone` custom field; keep the same adapter process for the test.
@@ -1763,6 +2143,10 @@ backends, not test suites.
 
 #### TC-E2E-001: Allocate and Provision Host Against NetBox
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Real NetBox instance is reachable at its in-cluster Service DNS
   address; use the existing BMaaS catalog-item fixture and a
   BareMetalInstanceType that resolves to a `host_label_selector`
@@ -1796,6 +2180,10 @@ backends, not test suites.
 
 #### TC-E2E-002: Deallocate and Reuse Host
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Host allocated and provisioned from NetBox pool
 - **Action:**
   1. Delete BareMetalInstance
@@ -1809,6 +2197,10 @@ backends, not test suites.
   5. Pool/capability values and unrelated metadata are unchanged after release
 
 #### TC-E2E-012: ID-Derived BMH and AAP Hostname Through Provisioning, Networking, and Restart
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Location:** Extend the patterns in
   `osac/tests/e2e/bmaas/regression/networking/test_bmaas_networking.py` and its
@@ -1853,6 +2245,10 @@ backends, not test suites.
 
 #### TC-E2E-003: Custom-Field Host Matching in Tenant Workflow
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Managed staged devices have integer `cpu_cores=16` or `8`, text
   `gpu_model="a100"` or `"h100"`, and integer `memory_gb=128` or `64`; include
   devices matching only subsets of the requested capabilities
@@ -1871,6 +2267,10 @@ backends, not test suites.
 
 #### TC-E2E-004: Allocate, Exhaust, Recover (Inventory Overflow Handling)
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Kind cluster with N available devices; establish N from direct
   NetBox fixture reads before any host allocation
 - **Action:**
@@ -1888,6 +2288,10 @@ backends, not test suites.
 
 #### TC-E2E-005: Custom-Field Concurrent Stress
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Real NetBox with 50 managed staged devices, empty owners, and
   integer `cpu_cores=16`; 20 concurrent tenants request `{"cpu_cores":"16"}`
 - **Action:** All 20 reconcile loops fire concurrently
@@ -1896,6 +2300,10 @@ backends, not test suites.
   occurring 412 is not required; TC-INT-021 and TC-E2E-006 control the race.
 
 #### TC-E2E-011: Concurrent Requests Exceed Available Capacity
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Setup:** Real NetBox with exactly 10 managed, staged, owner-empty devices
   matching `{"cpu_cores":"16","gpu_model":"a100","memory_gb":"128"}`;
@@ -1911,6 +2319,10 @@ backends, not test suites.
 ### Observability and Diagnostics
 
 #### TC-E2E-006: Prometheus Metrics — Conditional-Claim Race Detection
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Setup:** Operator running; Prometheus scraping; real NetBox with one eligible
   device. A test-only forwarding proxy can pause the operator's next claim
@@ -1942,6 +2354,10 @@ backends, not test suites.
 
 #### TC-E2E-007: Assignment Counters During No-Host Exhaustion
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** Operator running; real NetBox with 8 available devices
 - **Action:**
   1. Create 10 concurrent BareMetalInstance objects requesting the same capability selector
@@ -1960,6 +2376,10 @@ backends, not test suites.
      production inventory-capacity measurement
 
 #### TC-E2E-008: Inventory Exhaustion — Indefinite Retry with Condition
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Setup:** 10 BareMetalInstance objects with no matching devices in NetBox
 - **Action:**
@@ -1985,6 +2405,10 @@ backends, not test suites.
 
 #### TC-E2E-009: Allocation Condition and Requeue on No Matching Hosts
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 - **Setup:** BareMetalInstance allocating with valid capability schema but no
   matching NetBox devices. Use a test proxy with a count-only device-search
   observer and the existing bounded pytest polling helpers.
@@ -2006,6 +2430,10 @@ backends, not test suites.
      normal release cleanup.
 
 #### TC-E2E-010: Structured Logs
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Setup:** Operator running; logs captured
 - **Action:**

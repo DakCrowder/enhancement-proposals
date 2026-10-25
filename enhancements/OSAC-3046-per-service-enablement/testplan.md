@@ -39,6 +39,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A Kind cluster with OSAC prerequisites installed
 - A Helm values file with `services.bmaas.enabled: false` and `services.maas.enabled: false`
 
@@ -61,6 +62,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A Kind cluster with OSAC prerequisites installed
 - Default Helm values (no `services.*` overrides)
 
@@ -83,6 +85,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Helm chart source with `values.schema.json` containing inter-service dependency constraints
 
 ##### Steps
@@ -101,6 +104,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Helm chart source with `values.schema.json` containing inter-service dependency constraints
 
 ##### Steps
@@ -121,6 +125,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Fulfillment-service running with `--enable-caas` and `--enable-vmaas` only (BMaaS disabled)
 
 ##### Steps
@@ -140,6 +145,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Fulfillment-service running with BMaaS disabled
 
 ##### Steps
@@ -159,6 +165,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Fulfillment-service running with BMaaS disabled
 
 ##### Steps
@@ -178,6 +185,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Fulfillment-service running with some services disabled (tested under State 1: BMaaS+MaaS disabled, and State 3: all enabled)
 
 ##### Steps
@@ -199,6 +207,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - OSAC deployed with `services.bmaas.enabled: false`
 
 ##### Steps
@@ -221,6 +230,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - OSAC deployed with `services.bmaas.enabled: false`
 - BMaaS gRPC endpoints currently return `codes.Unavailable`
 
@@ -247,6 +257,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with `--enable-caas` and `--enable-vmaas` only
 
 ##### Steps
@@ -267,6 +278,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with all services enabled (default)
 
 ##### Steps
@@ -285,6 +297,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running
 
 ##### Steps
@@ -306,6 +319,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with BMaaS disabled and CaaS + VMaaS enabled
 - Seed host types include both bare-metal (with `interfaces`) and virtual (without `interfaces`) types
 
@@ -326,6 +340,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with VMaaS disabled and CaaS + BMaaS enabled
 - Seed host types include both bare-metal and virtual types
 
@@ -346,6 +361,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - `serviceFlags` with both BMaaS and VMaaS disabled (unit test — this combination is not deployable via Helm because CaaS requires VMaaS or BMaaS)
 
 ##### Steps
@@ -364,6 +380,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with BMaaS disabled
 - A bare-metal host type with known ID exists in the database
 
@@ -385,6 +402,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service running with BMaaS and MaaS disabled (State 1 configuration)
 
 ##### Steps
@@ -407,6 +425,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment-service started without any `--enable-*` flags
 
 ##### Steps
@@ -431,6 +450,7 @@ This reduces execution from 20 individual rollouts to 4 deployment states plus a
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Fulfillment-service running with VMaaS disabled
 
 ##### Steps

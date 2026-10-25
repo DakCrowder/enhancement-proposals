@@ -18,6 +18,8 @@
 
 **Preconditions:** Two tenants; caller is Tenant A Admin.
 
+- **Tier / owner:** E2E / [QE].
+
 **Steps:** Create an A account with `tenant-automation`; Get/List; update display name/description; Get; Delete; Get/List. Repeat Delete during a Keycloak outage, then restore it. In-process, pause reconciliation before Create, obtain a token, immediately Delete after commit, inspect finalizer/Get/List, try the token, then resume. Try supplying/removing finalizers through public input/masks.
 
 **Expected Results:** Reads reflect creation/updates. Create persists the finalizer before any reconciliation. Delete retains the record with deletion timestamp/finalizer and denies its token with `PERMISSION_DENIED`, including during the outage or paused controller. Successful/retried cleanup removes the Keycloak client before archiving; Get then returns `NOT_FOUND` and List omits it. Input finalizers are ignored; finalizer masks return `INVALID_ARGUMENT`. Control reconciliation in-process; deployed cleanup polling is bounded to 120 seconds at 2-second intervals.
@@ -29,6 +31,8 @@
 | IC-3 | critical | automated |
 
 **Preconditions:** A tenant account and assignable roles.
+
+- **Tier / owner:** E2E / [QE].
 
 **Steps:** Grant `tenant-idp-manager`, remove all roles, then grant `tenant-automation` and `osac-csi-driver` individually; Get after each. Try removed `tenant-user`/`tenant-reader`, a provider role, and `realm-management`; try human RoleBindings for both machine-only roles.
 
@@ -42,6 +46,8 @@
 
 **Preconditions:** Tenant Admin UI tests with mocked Connect responses.
 
+- **Tier / owner:** Unit / [DEV].
+
 **Steps:** Open list; create with a role; inspect/dismiss credentials; reload; edit metadata/roles; confirm rotation/deletion. Simulate lost create/rotate responses; navigate directly as Tenant User.
 
 **Expected Results:** The picker offers `tenant-automation`, `tenant-idp-manager`, `tenant-admin`, and `osac-csi-driver` with public/private permissions and empty-role denial, never an implicit grant. Tenant/project/Keycloak IDs are not editable. List/detail show client ID, roles, and deletion state without secrets. Create/rotate secrets appear only in the immediate result and disappear on dismissal/reload, including from query cache. Rotation/deletion require confirmation. Uncertain responses prompt explicit regeneration without automatic retry. Tenant Users cannot manage accounts, including through direct navigation.
@@ -54,6 +60,8 @@
 
 **Preconditions:** Deployed Fulfillment and CLI from the same revision.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Non-interactively create, get, list, update metadata/roles from a file, rotate, and delete; parse output.
 
 **Expected Results:** Successful commands exit zero with parseable output. Get/List/Update omit secret fields; create/rotate disclose their newly issued secret once.
@@ -65,6 +73,8 @@
 | IC-1 | high | automated |
 
 **Preconditions:** Inject Keycloak setup failure after client creation with cleanup available; separately inject DB commit failure after client enablement.
+
+- **Tier / owner:** Unit / [DEV].
 
 **Steps:** Create under each failure; inspect responses, Get/List, Keycloak, and logs. Remove the commit-failure orphan using its logged client ID.
 
@@ -80,6 +90,8 @@
 
 **Preconditions:** A/B each have an account and Tenant Admin.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** List as each admin with pagination/totals.
 
 **Expected Results:** Results and totals include only the caller's tenant.
@@ -91,6 +103,8 @@
 | IC-1, IC-2 | critical | automated |
 
 **Preconditions:** B has an account; caller is Tenant A Admin.
+
+- **Tier / owner:** E2E / [QE].
 
 **Steps:** Get/Update/Delete/RegenerateSecret using B's ID.
 
@@ -104,6 +118,8 @@
 
 **Preconditions:** Deployed Keycloak/Fulfillment; two A projects, one B project, and BMaaS/CaaS/VMaaS objects. A's account has `tenant-automation`, no human project membership. The client reaches and trusts both HTTPS issuer discovery and token endpoints.
 
+- **Tier / owner:** E2E / [QE].
+
 **Steps:** Discover `token_endpoint` from the issuer's OIDC metadata; obtain a client-credentials token with TLS validation. Get/List A projects and permitted resources across both projects in each service. Repeat for B and nonexistent IDs.
 
 **Expected Results:** Keycloak issues the token directly via HTTPS. It has exactly one signed string `osac_tenant=A`, the generated client ID as `azp`, and OSAC API audience. Both A projects/resources are accessible without memberships. Lists hide B; B Get matches a nonexistent resource's tenant-safe status/shape without disclosing data.
@@ -115,6 +131,8 @@
 | IC-3, IC-4 | critical | automated |
 
 **Preconditions:** A account with no roles and an issued token; two A projects, an IdP, and a Secret with known raw data.
+
+- **Tier / owner:** E2E / [QE].
 
 **Steps:** Try public reads/writes and private `Volumes/List`. Assign `tenant-automation`; read projects, write a permitted resource, List Secrets, and check self-access reviews. Replace with `tenant-idp-manager`, then `tenant-admin`; test each with the same unexpired token. Remove all roles and retry. Unit variants enumerate public/private RPCs, inject unrelated realm roles, and retain human/built-in CSI regressions.
 
@@ -128,6 +146,8 @@
 
 **Preconditions:** Active `tenant-automation` account with an unexpired token.
 
+- **Tier / owner:** E2E / [QE].
+
 **Steps:** Delete; retry a formerly permitted method with that token.
 
 **Expected Results:** `PERMISSION_DENIED` once `metadata.deletion_timestamp` is set, despite valid signature/expiry.
@@ -139,6 +159,8 @@
 | IC-1, IC-2 | critical | automated |
 
 **Preconditions:** Kind suite with a generated account and unrelated client whose settings/secret are recorded. The IDP principal has its existing organization/user roles plus only `create-client` and `manage-clients` as added `realm-management` roles.
+
+- **Tier / owner:** Component integration / [DEV].
 
 **Steps:** Supply the unrelated ID in `status.client_id` on Create and display-metadata Update outside the mask; then try a status mask. Rotate/Delete using the real account ID, unrelated IDs, and cross-tenant IDs. Compare Keycloak state through the Admin API helper.
 
@@ -152,6 +174,8 @@
 
 **Preconditions:** ComputeInstance/BareMetalInstance fixtures in two A projects and B, with distinct credential-like inline `spec.user_data` markers. A has an automation account without human memberships and a Secret with another marker.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Get/List A/B resources; call A's `Secrets/Get`.
 
 **Expected Results:** Both A inline markers are readable; B's resources/markers remain hidden. `Secrets/Get` returns `PERMISSION_DENIED` without `tenant-admin`: inline user data follows resource visibility, not Secret protection.
@@ -163,6 +187,8 @@
 | IC-3, IC-4 | critical | automated |
 
 **Preconditions:** Real Fulfillment/PostgreSQL/Keycloak; A/B projects/volumes and valid storage tier; Tenant A Admin creates an account with only `osac-csi-driver`. No provider provisioning.
+
+- **Tier / owner:** E2E / [QE].
 
 **Steps:** Obtain a token; Create/Get/List/Delete A volumes privately. Try B IDs, forged tenant metadata, input status, Volume Update/Signal, other private services, and public resource APIs. Add/revoke automation, then revoke CSI; retry API calls after each change with the same token. Regrant CSI, delete the account, and retry with that token.
 
@@ -178,6 +204,8 @@
 
 **Preconditions:** Tenant Admin; Kind suite also has a 63-character tenant name.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Create/Get/List/Update; inspect API/UI/CLI outputs and request/response logs with body logging enabled. Repeat logging checks for rotation; dry-run Create. Create for the maximum-length tenant and obtain a Keycloak token.
 
 **Expected Results:** Create returns a derived client ID containing the authenticated tenant and persisted account UUID, plus one nonempty secret. Subsequent non-rotation responses and all logs contain no secret values. Dry-run calls no Keycloak and returns no secret. The 108-character client ID obtains a token.
@@ -190,6 +218,8 @@
 
 **Preconditions:** Real Kind Keycloak; active automation account with an unexpired token from its initial credentials. Keep roles unchanged.
 
+- **Tier / owner:** E2E / [QE].
+
 **Steps:** Call a permitted API; rotate; repeat with the retained token; request tokens with old/new secrets; Get/List.
 
 **Expected Results:** Rotation discloses one replacement; the retained token still works while unexpired. Old-secret token acquisition fails (isolated 26.6.4 result: `401 unauthorized_client`); the replacement obtains a token. Get/List disclose neither secret.
@@ -201,6 +231,8 @@
 | IC-2 | high | automated |
 
 **Preconditions:** Inject transport failure after Keycloak commits regeneration, before response delivery.
+
+- **Tier / owner:** Unit / [DEV].
 
 **Steps:** Get/List; explicitly regenerate again.
 

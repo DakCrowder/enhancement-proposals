@@ -158,13 +158,25 @@ Both live in OSAC's test code; providers do not use them.
 
 #### TC-REG-01: Reject invalid registration and NetworkClass selections
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Test each FAILED condition of [contract §4.2](design.md#42-registration-and-capabilities) as its own case, including `network_type` on a Fabric Manager, `capabilities` on a Kubernetes Manager, the typo `networkTypes`, and a Kubernetes Manager whose `network_type` the Fabric Manager does not declare (the message names both). Each sets the NetworkClass to FAILED with the reason in `status.message` and launches no AAP job. A key with an empty value (for example `capabilities: ""`) is accepted as absent. A valid selection records the Kubernetes Manager's type in the NetworkClass status `network_type`, or leaves it empty without one. Creating or deleting a labelled registration resolves a FAILED NetworkClass again. Create both registrations before the NetworkClass CR and verify it becomes READY. Delete a READY NetworkClass's registration and verify the NetworkClass stays READY. A task outside the manager type's fixed task set is rejected, not routed elsewhere.
 
 #### TC-INVOKE-01: Run every fixed manager task through the generic playbook
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Run a task against two implementations of a manager type. Verify OSAC selects the manager from NetworkClass and the task from the fixed set, includes the registered `ansible_role` with `tasks_from: <task>`, and sends both the same input; providers add no AAP job templates. Verify every networking job template sets `ask_labels_on_launch: true` and an AAP job timeout of 60 minutes. Verify every job has the AAP label `osac-<task>-<manager>-<resource API ID>-<attempt>`, `attempt` grows by one per launch, and the `status.jobs` entry is `Running` before the launch and has the `jobID` after it. With the registered role or its task file missing from the image, verify the job fails with `osac_error.retryable: true` and a retry succeeds once the image has it.
 
 #### TC-CONTRACT-02: Exercise task envelope fixtures
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Run the reference no-op manager for tasks without typed outputs and the mock manager for tasks with them, with at least one fixture per fixed task (including the optional pair when enabled). Verify each fixture supplies the common and task-specific inputs and OSAC accepts a matching result of the expected shape. Verify an unknown task launches no job, and managers neither call one another nor write OSAC workload objects.
 
@@ -174,13 +186,25 @@ Review every task section in the contract's Task reference and verify it defines
 
 #### TC-SETTINGS-01: Provide manager settings and credentials through the networking instance group
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 Put a test value in the ConfigMap and Secret `network-fulfillment-ig`, launch a manager task, and verify the manager receives both as environment variables. Verify a task also runs with no ConfigMap and an empty Secret, and secret values are absent from `osac_job_vars`, `osac_result`, and task logs.
 
 #### TC-SNAPSHOT-01: Send only the listed snapshot fields
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 For every task fixture, verify each snapshot's `spec` has only the fields the task's [§4.10](design.md#410-task-reference) section lists, and unlisted keys are absent from `osac_job_vars`. Verify a physical attachment's `target` is exactly `{kind: BareMetalInstance, id, host_name}`, every attachment's `network_attachment.security_group_ids` holds only the selected groups' API IDs (no rules), the Kubernetes overlay apply gets no `interface.ipv4_address` and every later task of the attachment (the Fabric apply and both deletes) gets the same VM address in it, and that `tenant` equals the CR's `osac.openshift.io/tenant` annotation. Set secret-bearing CR fields (for example a ClusterOrder pull secret and BareMetalInstance user data) and verify none of them reaches `osac_job_vars` or task logs.
 
 #### TC-MANAGER-DELETE-01: Delete with the manager names recorded at create
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 After a resource is created, recreate the manager's registration ConfigMap with a different `ansible_role`, then delete the resource. Verify the delete runs the `{name, ansibleRole}` recorded in `status.networkManagers`.
 
@@ -188,35 +212,67 @@ After a resource is created, recreate the manager's registration ConfigMap with 
 
 #### TC-DESC-01: Return a valid `vm_attachment` from OSAC's Kubernetes Manager
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Run `cudn_evpn`'s `apply_network_attachment` with valid input. Verify `vm_attachment` has only `namespace`, and that namespace exists in the hub with `osac.openshift.io/tenant` equal to the input `tenant`.
 
 #### TC-DESC-02: Build the VM network fields for Linux and Windows VMs
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 VMaaS flow ([VMaaS design](/enhancements/OSAC-1435-vmaas-networking/design.md)). Verify VMaaS creates the VM in the `vm_attachment` namespace with exactly `networks: [{name: tenant, pod: {}}]` and `interfaces: [{name: tenant, binding: {name: l2bridge}}]` in both Linux and Windows templates, and that the VM gets its address from the namespace's primary network.
 
 #### TC-DESC-03: Reject malformed `vm_attachment` results
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 For Kubernetes `apply_network_attachment`, reject: missing `namespace`; nonexistent namespace; namespace without `osac.openshift.io/tenant` equal to the tenant API ID from `osac_job_vars.tenant`; and any additional field such as `network`, `binding`, `labels`, or raw `networks`. The NetworkAttachment stays non-ready and VMaaS creates no VM.
 
 #### TC-VM-02: Create the VM after the attachment is ready
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 Create an overlay NetworkAttachment with `spec.target` = `{kind: ComputeInstance, id: <API ID>}` and `spec.subnet` = the Subnet API ID. While the Kubernetes apply runs, verify no VirtualMachine exists. After OSAC accepts the `vm_attachment` result, verify VMaaS creates the VM with the mapped network fields and requested run strategy, and the manager never reads or modifies the VM. Verify the Fabric overlay apply starts only once VMaaS reported the VM's address, and the NetworkAttachment becomes Ready only after it succeeds.
 
 #### TC-READY-01: Report readiness after both managers for a VM
 
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
+
 On a Subnet with both managers recorded, verify the Subnet becomes Ready only after both managers' create tasks succeed; a SecurityGroup becomes READY only after both managers' `create_security_group` succeed (Fabric first), whatever services are enabled; an overlay NetworkAttachment becomes Ready only after the Kubernetes and then the Fabric `apply_network_attachment` succeed; a physical one after the Fabric `apply_network_attachment` succeeds, with no Kubernetes attachment task; an ExternalIP becomes ALLOCATED after its Fabric task alone.
 
 #### TC-POLICY-01: Select policy with the ComputeInstance API ID label
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 Verify VMaaS sets `osac.openshift.io/compute-instance-id: <ComputeInstance API ID>` in the VM's `spec.template.metadata.labels`. Verify the Kubernetes attachment binds the VM pod by the API ID label, the Fabric overlay attachment gets the VM's address in `interface.ipv4_address`, and a VM pod (`kubevirt.io: virt-launcher`) without that label receives no tenant traffic under the Subnet baseline. Verify a disk import pod on the Subnet's network that no attachment policy selects also receives no tenant traffic. Run `cudn_evpn` `create_security_group` with an ICMP rule and verify ICMP is enforced exactly as the rule says (or the task fails with `retryable: false`), and every NetworkPolicy sets both `Ingress` and `Egress` in `policyTypes`.
 
 #### TC-VM-DELETE-01: Delete the VM before attachment policy cleanup
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 Verify VMaaS deletes the VM and sees it gone before deleting the NetworkAttachment, and the Fabric `delete_network_attachment` runs before the Kubernetes one. Make the mock manager fail the Kubernetes `delete_network_attachment` once; verify the failure keeps the NetworkAttachment finalizer and blocks ComputeInstance deletion, and after the failpoint is cleared the retry unbinds the VM and removes its per-VM objects.
 
 ### Network segment and results
 
 #### TC-SEGMENT-02: Validate, store, and pass the network segment
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 With the mock manager, verify:
 - the Fabric task runs first on create and the Kubernetes task first on delete;
@@ -232,15 +288,27 @@ The manager side is TC-SEGMENT-01.
 
 #### TC-FR6-01: Validate typed outputs and task errors
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Verify OSAC rejects, before dependent work starts, a result that breaks [contract §4.6](design.md#46-task-result-and-errors) or a [§4.10](design.md#410-task-reference) acceptance rule, one case per rule (ExternalIP, cluster ingress including the Subnet's broadcast address, `dhcp_lease` MAC and address, `vm_attachment`), and reads results only from the job it launched. For create, apply, attach, reserve, and `query_dhcp_lease`, verify OSAC retries only in the §4.6 cases; for the timeout case the test shortens the job template timeout and verifies OSAC detects it from the AAP job record (status `failed` with AAP's timeout job explanation, no `osac_error`) and records the entry message 'job timed out after 60 minutes'. For create, apply, attach, and reserve, verify the CR shows `Ready=False`, reason `Progressing`, meanwhile, and that `retryable: false`, a failed play without `osac_error`, and a rejected result stop retries with `Ready=False`, reason `Failed`, and the message in status. For `query_dhcp_lease`, verify the NetworkAttachment `Ready` condition never changes, while it retries and after a final or rejected result, which stops the queries and sets its `query_dhcp_lease` job entry to state `Failed`. Verify success sets `Ready=True`, reason `Succeeded`. Verify delete tasks are retried after every failure.
 
 #### TC-FR6-02: Accept east-west FabricDomain results
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 With Ethernet east-west enabled and the Fabric Manager declaring `eastWestEthernet`, create and delete a FabricDomain. Verify OSAC runs `create_fabric_domain` and `delete_fabric_domain`, accepts results only from the job it launched, and updates status only after each accepted result. Without east-west, the capability, or BMaaS enabled, verify no FabricDomain task is launched.
 
 ### Retries and concurrency
 
 #### TC-RETRY-03: Retry idempotently and serialize opposite actions
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 With the mock manager, verify:
 - Partial create: the mock completes a backend create/apply but fails before OSAC accepts its result. After the job is terminal, the retry gets the same stored input, returns the same typed output, and creates no duplicate backend state.
@@ -251,19 +319,35 @@ With the mock manager, verify:
 
 #### TC-CONCURRENCY-02: Serialize Subnet tasks per VirtualNetwork
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Create two Subnets in one VirtualNetwork at once. Verify OSAC runs at most one Subnet task at a time per VirtualNetwork, and the second Subnet's task starts only after the first ends. Create attachments for two workloads on one Subnet at once and verify their tasks run in parallel. On one ClusterOrder, verify two jobs of one task never run at once, while jobs of different tasks (for example `publish_public_dns_api` and `reserve_cluster_ingress_ip`) run in parallel.
 
 ### Addressing and lifecycle rules
 
 #### TC-IPAM-01: Compute, record, and honor the Subnet address layout
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 On a /24, create Subnets with the plans (overlay/fabric/lbVip) 0.5/0.25/0.25, 0.75/0.25/0, 1/0/0, and 0.5625/0.25/0.1875 with a Kubernetes Manager, and 0/0.75/0.25 and 0/1/0 without one. Verify `status.ipam` follows [contract §4.8](design.md#48-addressing): ranges in the order overlay, fabric, lbVip from the network address, each the fewest aligned CIDRs in ascending order (0.5625/0.25/0.1875 of `x.0/24`: `[x.0/25, x.128/28]`, `[x.144/28, x.160/27, x.192/28]`, `[x.208/28, x.224/27]`), `[]` for a share of 0, and `gateway_ipv4` the network address plus one; and that both managers receive it unchanged in `osac_job_vars.ipam`. Attach one VM and one bare-metal host to a shared Subnet and verify the VM address is in `overlay_ipv4_cidrs`, the host address is in `physical_ipv4_cidrs`, neither is in `lb_vip_ipv4_cidrs` or equal to `gateway_ipv4`, and both DHCP servers hand out the Subnet's mask and `gateway_ipv4` as the router. Verify the Fabric DHCP does not answer the VM's MAC and the Kubernetes Manager's DHCP does not answer the host's MAC. Verify later tasks, including delete, receive the recorded layout from `status.ipam`, not a recomputed one. Verify a rollout that changes the plan while a VirtualNetwork exists fails and names the field. Verify fulfillment rejects a Subnet whose prefix length is too long for its plan (for example a /27 with 0.5/0.25/0.25 or a /25 with 0.5625/0.25/0.1875; [Unified — Subnet address layout](/enhancements/OSAC-1433-unified-networking/design.md#subnet-address-layout)), and no manager task runs for it.
 
 #### TC-IPAM-02: Handle empty ranges
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 With the mock manager, verify Fabric `create_subnet` and `delete_subnet` run and succeed with `[]` lists. On a Subnet with no overlay range (0/1/0), a `dhcp_lease` equal to `gateway_ipv4` (now in the physical range) is rejected. Run `cudn_evpn` `create_subnet` with 0.5/0.25/0.25, 0.75/0.25/0, and 1/0/0 and verify `reservedSubnets` lists exactly the CIDRs outside `overlay_ipv4_cidrs` (none for 1/0/0).
 
 #### TC-RULES-01: Verify the remaining contract rules
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 With the mock manager, verify OSAC handles each rule; the suite checks the manager side in TC-DELETE-01, TC-DELETE-02, TC-REJECT-01, TC-SG-02, and TC-CONCURRENCY-01:
 - An implementation-limit Subnet of a Kubernetes Manager: its Subnet tasks succeed without changes, the attachment apply fails with `retryable: false`, and the attachment delete then succeeds. Run with `cudn_evpn` instead of the mock, only the first Subnet whose Kubernetes `create_subnet` runs gets the hub network (in a tenant's default VirtualNetwork, the default Subnet), which records that Subnet's API ID; a rerun keeps it; a Subnet created after the owner is deleted claims it. A missing hub prerequisite fails `create_subnet` with `retryable: true`.
@@ -279,11 +363,19 @@ With the mock manager, verify OSAC handles each rule; the suite checks the manag
 
 #### TC-WORKLOAD-01: Exercise bare-metal and Cluster workload flows
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 With the mock manager, run BMaaS and CaaS worker create/delete flows with the same fixed manager contract (the provider profiles' cases are TC-BM-01 and TC-CLUSTER-01). Verify the NetworkAttachment is Ready before the handoff reboot, `query_dhcp_lease` follows the reboot and, while no lease is found, repeats every 30 seconds and every 5 minutes from the 20th attempt, and teardown waits for port restoration. Verify CaaS worker attachment tasks carry tenant `system`. The Cluster flow follows the CaaS workload service design and adds no task fields to the shared input.
 
 ### Suite self-test
 
 #### TC-CONFORMANCE-01: Report suite outcomes
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 Suite self-test of the networking area, run by OSAC for each release ([contract §4.11](design.md#411-conformance-tests), Ownership). The generic behavior (report keys, JUnit XML, result rules, cleanup after a failing profile, focused runs) is tested by the [conformance suite test plan](/enhancements/OSAC-XXXX-conformance-suite/testplan.md). This case covers only what networking adds:
 - In CI, run the task tests against the reference no-op manager: every task test the no-op supports passes.
@@ -299,6 +391,10 @@ Suite self-test of the networking area, run by OSAC for each release ([contract 
 These cases test the proposed handling in [contract edge cases](design.md#edge-cases-that-need-handling). They are not release gates yet; each runs once its rule is implemented.
 
 #### TC-RETRY-02: Treat a lost AAP job as failed and never launch a job twice
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - Lost job: remove a tracked create job's record from AAP. OSAC fails it with `retryable: true` and retries with the contract backoff; with a delete pending, it starts the delete once it marks the lost job failed.
 - After one failed launch call, OSAC resolves the entry by its AAP label.
@@ -320,15 +416,27 @@ These cases test the proposed handling in [contract edge cases](design.md#edge-c
 
 #### TC-EDGE-01: Resolve registrations across operator restarts
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 Restart the operator after creating a missing registration while it was down and verify the FAILED NetworkClass is resolved at start. Delete a READY NetworkClass's registration while the operator is down, restart it, and verify the NetworkClass stays READY and is not resolved again. Adding or removing the manager-type label on an existing ConfigMap resolves a FAILED NetworkClass again; any other ConfigMap update triggers nothing.
 
 #### TC-EDGE-02: Accept segments under races and restarts
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 With the mock manager, verify:
 - with an operator restart around the status update that sets the Fabric `create_subnet` entry to `Succeeded`, no Kubernetes task of the Subnet or its NetworkAttachments starts without `status.networkSegment`;
 - two results with one VNI processed at once are not both accepted.
 
 #### TC-EDGE-03: Claim the `cudn_evpn` hub network after the owner's delete
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 Run `cudn_evpn`: a `create_subnet` while the owner Subnet is being deleted fails with `retryable: true` and claims the network once the owner's delete finishes.
 

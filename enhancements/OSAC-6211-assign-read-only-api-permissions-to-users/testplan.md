@@ -25,6 +25,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The OPA policy test inputs include reader-only identities for both seeded
   roles, a mixed `tenant-reader` and `tenant-admin` identity, a general client,
   a tenant admin, an IdP manager, and an admin identity.
@@ -83,6 +84,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A container runtime is available to start the Kafka test container.
 - The integration environment has events for `tenant-a` and `tenant-b`.
 - The test user has a `tenant-reader` token scoped to `tenant-a`.
@@ -108,6 +110,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment Service, PostgreSQL, and Keycloak are deployed using the
   documented fulfillment integration profile.
 - The token has the `tenant-reader` role and tenant claim `tenant-a`.
@@ -137,6 +140,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [UI].
 - The UI session test has token claims for `tenant-reader` and
   `cloud-provider-reader`, each without an administrative role.
 
@@ -159,6 +163,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment Service, PostgreSQL, and Keycloak are deployed using the
   documented fulfillment integration profile.
 - The token has the `cloud-provider-reader` role and the user's existing
@@ -190,6 +195,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment Service, PostgreSQL, and Keycloak are deployed using the
   documented fulfillment integration profile.
 - The test user has a refreshed JWT with `tenant-reader` and no other explicit
@@ -224,6 +230,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Fulfillment Service, PostgreSQL, and Keycloak are deployed using the
   documented fulfillment integration profile.
 - The test user has a refreshed JWT with `tenant-reader` and no other role or
@@ -265,6 +272,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The documented fulfillment integration profile has Fulfillment Service,
   PostgreSQL, and Keycloak running.
 - An authorized administrator and test users for `tenant-reader` and
@@ -316,6 +324,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [UI].
 - The UI test has an administrator session and API fixtures containing a
   `tenant-reader` role, a `cloud-provider-reader` role, and eligible users.
 
@@ -338,6 +347,7 @@ access and does not perform a resource operation.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A deployed OSAC environment has the UI, Fulfillment Service, PostgreSQL,
   and Keycloak available.
 - An administrator session and a tenant user's active browser session are

@@ -77,6 +77,8 @@ For `BareMetalInstances.Create`, set `object.metadata.name` to the unique reques
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 A template and visible canonical types/images exist. Prepare locked and editable CatalogItems whose image/type defaults include matching and mismatching pairs.
 
 ##### Steps
@@ -97,6 +99,8 @@ A template and visible canonical types/images exist. Prepare locked and editable
 **Coverage:** Component integration / DEV, E3 and E7.
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 A visible template supplies type-amd64 under the PR #1451 contract. type-arm64, image-amd64, and image-arm64 are visible. Retain the existing template/authentication fixture fields.
 
@@ -122,6 +126,8 @@ A visible template supplies type-amd64 under the PR #1451 contract. type-arm64, 
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 The CLI can read an image for each supported architecture and a multi-architecture image.
 
 ##### Steps
@@ -141,6 +147,8 @@ The CLI can read an image for each supported architecture and a multi-architectu
 **Coverage:** Unit / DEV, E4.
 
 ##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 The type creation form uses mock Connect transport with valid remaining hardware fields.
 
@@ -165,6 +173,8 @@ The type creation form uses mock Connect transport with valid remaining hardware
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Valid remaining hardware fields are supplied. Prepare amd64, arm64, s390x and invalid inputs x86_64, aarch64, AMD64, ARM64, leading/trailing spaces, empty string, and ppc64le.
 
 ##### Steps
@@ -185,6 +195,8 @@ Valid remaining hardware fields are supplied. Prepare amd64, arm64, s390x and in
 **Coverage:** Unit and component integration / DEV, E1 and E3.
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 CLI is configured for the component-integration fulfillment service; valid remaining arguments are provided.
 
@@ -209,6 +221,8 @@ CLI is configured for the component-integration fulfillment service; valid remai
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Three canonical types and three single-architecture images are visible and available.
 
 ##### Steps
@@ -232,6 +246,8 @@ Three canonical types and three single-architecture images are visible and avail
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 An image declares amd64 and arm64 in both list orders; an s390x type and matching amd64/arm64 types exist.
 
 ##### Steps
@@ -253,6 +269,8 @@ An image declares amd64 and arm64 in both list orders; an s390x type and matchin
 **Coverage:** Unit and Contract / DEV, E1 and E2.
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 E2 has two persisted instances selecting type-amd64/image-multi: one before first CR creation, and one with an existing CR whose provisioning fields are captured. Change the type's mutable `spec.host_label_selector` through provider Update to produce a pending selector projection for the second instance; retain all other fixture fields.
 
@@ -278,6 +296,8 @@ E2 has two persisted instances selecting type-amd64/image-multi: one before firs
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 An instance and CR exist with known applied provisioning fields and an incompatible current image/type catalog. Exercise running and stopped observations.
 
 ##### Steps
@@ -301,6 +321,8 @@ An instance and CR exist with known applied provisioning fields and an incompati
 **Coverage:** Component integration and Contract / DEV, E3/E7 for admission and E2 for downstream parameters.
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 An instance uses inline user data and permits the existing atomic migration. A visible Secret contains nonempty `data["userdata"]`; capture the stored user-data fields and applied CR parameters. The selected catalog pair is incompatible.
 
@@ -326,6 +348,8 @@ An instance uses inline user data and permits the existing atomic migration. A v
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Use the existing DescribeMigration harness to prepare a disposable PostgreSQL database at the version immediately before the new migration. Seed active, soft-deleted, and archived BareMetalInstanceTypes with canonical amd64, arm64, s390x and noncanonical x86_64, aarch64, AMD64, ARM64, S390X, whitespace variants, ppc64le, empty strings, null, and missing architecture fields. All remaining hardware is valid.
 
 ##### Steps
@@ -348,6 +372,8 @@ Use the existing DescribeMigration harness to prepare a disposable PostgreSQL da
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 A previously noncanonical type is referenced by a CatalogItem and existing instance. Run the real migration before enabling the new service. Provider credentials and matching/mismatching images are available.
 
 ##### Steps
@@ -369,6 +395,8 @@ A previously noncanonical type is referenced by a CatalogItem and existing insta
 **Coverage:** Component integration database boundary / DEV, E9; owner [OSAC-6228](https://redhat.atlassian.net/browse/OSAC-6228).
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Disposable PostgreSQL databases support pre-migration seeding, the real migration runner, and controlled transaction failure. Include one populated database and one empty fresh-install database.
 
@@ -395,6 +423,8 @@ Disposable PostgreSQL databases support pre-migration seeding, the real migratio
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
+
 Mock Connect returns an amd64 type and visible available images for amd64, arm64, and amd64+arm64.
 
 ##### Steps
@@ -417,6 +447,8 @@ Mock Connect returns an amd64 type and visible available images for amd64, arm64
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
+
 A wizard has an image selected or defaulted under one type. Prepare another type and a selected/default reference outside the loaded list page.
 
 ##### Steps
@@ -438,6 +470,8 @@ A wizard has an image selected or defaulted under one type. Prepare another type
 **Coverage:** Unit / DEV, E4.
 
 ##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 Mock Connect supports delayed and failed type/image lookups and an admission mismatch after UI selection.
 
@@ -462,6 +496,8 @@ Mock Connect supports delayed and failed type/image lookups and an admission mis
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Two tenants have distinct image catalogs. Prepare a hidden image whose architecture can be changed between matching and mismatching, and an authorized shared image with an incompatible architecture.
 
 ##### Steps
@@ -483,6 +519,8 @@ Two tenants have distinct image catalogs. Prepare a hidden image whose architect
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Prepare matching and mismatching images marked available, deprecated, obsolete, and deleting.
 
 ##### Steps
@@ -503,6 +541,8 @@ Prepare matching and mismatching images marked available, deprecated, obsolete, 
 **Coverage:** Unit and Contract / DEV, E1 and E2.
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 E2 has a persisted instance with a blocked projection. Its authorized image has a source URL and its type has a private host selector distinguishable from their catalog names.
 
@@ -548,6 +588,8 @@ The implementation's API reference, CLI help, and provider/tenant documentation 
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
+
 E5 has compatible source-pinned deployments of the fulfillment service, bare-metal operator, AAP and provider, including PR #1451's effective-type contract, with the fulfillment service reconciler enabled. Tenant authentication, hub access, available hosts, a template, and type/image fixtures are configured. Migration tests require prepared pre-feature data migrated before the new service starts.
 
 ##### Steps
@@ -571,6 +613,8 @@ E5 has compatible source-pinned deployments of the fulfillment service, bare-met
 **Coverage:** E2E manual verification / QE, E6.
 
 ##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 E6 has a deployed UI and fulfillment service, provider and tenant accounts, authorized catalogs, and a source-pinned build.
 

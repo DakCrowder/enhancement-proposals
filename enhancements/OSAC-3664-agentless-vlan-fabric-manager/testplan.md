@@ -24,6 +24,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The installer values enable the agentless fabric-manager entry.
 - No agentless manager ConfigMap exists.
 
@@ -47,6 +48,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - The deployment supports the existing Netris backend selection mechanism.
 - Equivalent tenant networking requests are available for both backend profiles.
 
@@ -72,6 +74,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - agentless_net is Ready in NetworkClass.
 - The test tenant has the required authorization and tenant metadata.
 - A Cloud Infrastructure Admin fixture can create the provider-scoped
@@ -100,6 +103,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - An allocated ExternalIP has an address in status.
 - A target resource has a primary private address.
 
@@ -126,6 +130,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - One Ready VirtualNetwork contains one Ready Subnet.
 - Two test interfaces are bound to the same Subnet VLAN.
 
@@ -148,6 +153,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - One Ready VirtualNetwork contains two Ready Subnets.
 - Test interfaces are bound to different Subnets.
 
@@ -170,6 +176,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Two VirtualNetworks use overlapping IPv4 CIDRs.
 - Each VirtualNetwork has a Ready Subnet and an attached test interface.
 
@@ -194,6 +201,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A Ready Subnet has the per-VN dnsmasq service bound to its VLAN interface,
   with a rendered range that excludes the gateway address.
 - A BareMetalInstance has a network attachment referencing that Subnet.
@@ -225,6 +233,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A BareMetalInstance has two network attachments on different Subnets.
 - The BareMetalHost `osac.openshift.io/interface-macs` annotation maps each
   attached interface to its authoritative MAC.
@@ -257,6 +266,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A ComputeInstance uses a NetworkClass with agentless fabric and the required
   k8sManager/OVN path.
 
@@ -279,6 +289,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - `subnet-a` is Ready.
 - The BareMetalInstance request contains two physical interfaces that both
   reference `subnet-a`.
@@ -309,6 +320,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A VirtualNetwork has two Ready Subnets with dnsmasq ranges, gateway
   exclusions, and a valid per-VN lease file.
 - A bare-metal interface has a current lease on one Subnet.
@@ -337,6 +349,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - An ExternalIP is Allocated with status.address populated.
 - The target has no primary private address at first, then receives one.
 - The supported external path is available, so the default forwarding baseline
@@ -375,6 +388,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [DEV].
 - An ExternalIP is Allocated with status.address populated.
 - A NATGateway references that ExternalIP and a Ready VirtualNetwork.
 - The VirtualNetwork has two Ready Subnets, and the NATGateway state contains
@@ -420,6 +434,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A current schema-v1 SQLite state contains a Ready VirtualNetwork, one Ready
   Subnet, an allocated ExternalIP, and a Ready NATGateway.
 - Provider commands are replaced by fixtures that record Subnet data-plane and
@@ -460,6 +475,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A temporary schema-v1 SQLite state contains the VirtualNetwork, Subnet,
   ExternalIPPool, and ExternalIP provider prerequisites.
 - The AgentlessNet provider inventory contains one test network node and
@@ -499,6 +515,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [DEV].
 - The OSAC-6202 implementation is deployed from the source-pinned SNAT branch.
 - The local VLAN lab has an available test ExternalIPPool, SNO, AAP, network
   node, Cumulus switches, and upstream-router endpoint.
@@ -558,6 +575,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A Cloud Infrastructure Admin creates an IPv4 ExternalIPPool with known
   capacity.
 
@@ -589,6 +607,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A Ready ExternalIPPool has no available capacity.
 
 ##### Steps
@@ -613,6 +632,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An ExternalIPPool has `status.total=2`, `status.allocated=0`,
   `status.available=2`, and `status.phase=Ready`.
 - The fulfillment-service capacity update and ExternalIPPoolReconciler phase
@@ -642,6 +662,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - The AgentlessNet state file has a valid committed generation and `.bak`.
 - The test can interrupt a write before, during, and after atomic rename.
 
@@ -670,6 +691,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A Ready Subnet has a recorded VLAN.
 - A BareMetalInstance exposes an interface, authoritative MAC, host UID, and
   SubnetRef attachment; the provider provisioning-network ID is configured.
@@ -701,6 +723,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Fixtures represent a CaaS cluster node and a VMaaS ComputeInstance whose
   attachment omits the Subnet field so the existing tenant default must be
   resolved.
@@ -732,6 +755,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - The Cumulus test provider returns a deterministic failure for the requested
   VLAN or access-port operation.
 
@@ -754,6 +778,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A BMF attachment has completed port handoff.
 - The DHCP query returns no matching lease or an artifact from an older
   generation.
@@ -777,6 +802,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A VirtualNetwork, Subnet, NATGateway, and ExternalIPAttachment are Ready.
 - The net node has a valid state generation, `.bak`, dnsmasq lease files, and
   provider BGP session.
@@ -809,6 +835,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - An ExternalIPAttachment is Ready and owns a DNAT mapping.
 - The parent ExternalIP is Allocated.
 
@@ -835,6 +862,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - The first VirtualNetwork has two Ready Subnets, each with VLAN and namespace
   state.
 - The second VirtualNetwork has an independent Subnet, VLAN, namespace, and
@@ -869,6 +897,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - An ExternalIP is Allocated and its ExternalIPAttachment is Ready with an
   owned DNAT mapping and attachment finalizer.
 - The test can request parent-first deletion or issue ExternalIP and
@@ -901,6 +930,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A Ready NATGateway owns explicit SNAT rules and an advertised ExternalIP
   `/32`.
 - The parent ExternalIP is Allocated and has no competing consumer.
@@ -931,6 +961,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - NetworkClass advertises only the agentless_net ipv4 capability.
 
 ##### Steps
@@ -952,6 +983,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - `agentless_net` is Ready with IPv4 capability.
 - A Ready VirtualNetwork has a supernet containing the candidate Subnet CIDRs.
 
@@ -982,6 +1014,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Equivalent Netris and agentless test environments expose the same API.
 - The same tenant scenario is runnable against both backends.
 
@@ -1009,6 +1042,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Equivalent ExternalIPPool, ExternalIP, ExternalIPAttachment, and NATGateway
   scenarios are available in both backend environments.
 
@@ -1039,6 +1073,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Two VirtualNetworks use overlapping private CIDRs.
 - Each has a Ready Subnet and a test endpoint.
 
@@ -1061,6 +1096,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Two overlapping VirtualNetworks have an ExternalIPAttachment and a
   NATGateway configured through allocated ExternalIPs with populated status
   addresses.
