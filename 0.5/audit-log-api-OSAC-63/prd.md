@@ -62,7 +62,7 @@ production-hardened. [Clarify: D1]
 
 ## Out of Scope
 
-- Cryptographic integrity verification (hash chains, Merkle trees) —
+- Cryptographic integrity verification —
 follow-up Feature under the same Outcome (OSAC-3415). This first
 increment provides append-only immutability; cryptographic
 tamper-evidence is a later increment.
@@ -159,7 +159,9 @@ to the audit log independently of resource lifecycle events.
 
 ## Provenance
 
-Authored: revise @ prd 0.11.5 - 4164796, workspace main @ f4607b916
-Phases: draft, revise, revise, revise, revise
+Authored: draft @ prd 0.11.5 - 4164796, workspace main @ f4607b916
+Final: revise @ prd 0.11.5 - e2b0d87, workspace main @ d81c18823
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"4164796","source_repo":"f4607b916","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+> Context changed between draft and revise.
+
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
