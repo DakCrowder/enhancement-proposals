@@ -50,8 +50,8 @@ denied access attempts are recorded. [Clarify: D7, D9]
 audit records. This does not protect against direct database access or
 privileged operator intervention; cryptographic tamper-evidence that
 covers storage-level integrity is deferred (see Out of Scope).
-- Audit-of-audit: Cloud Provider Admin access to tenant audit data is
-itself recorded. [Clarify: D9]
+- Audit-of-audit: Access to audit data by every principal is itself
+recorded. [Clarify: D9]
 - Data residency: audit data is co-located with the platform deployment,
 inheriting the deployment's sovereign jurisdiction. [Clarify: D11]
 - Target milestone: 0.5 (Dev Preview) — functional but not
