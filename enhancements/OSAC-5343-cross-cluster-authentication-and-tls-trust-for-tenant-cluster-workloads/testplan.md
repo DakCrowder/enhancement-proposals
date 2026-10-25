@@ -41,6 +41,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A TLS gRPC test server serves 'fulfillment.test.example:8001' with a DNS SAN
   for that name and a certificate signed by the fixture root CA.
 - A temporary CA file contains that root and the operator is configured with
@@ -65,6 +66,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A fixture CA signs both a fulfillment gRPC server and the configured OIDC
   token endpoint.
 - A temporary CSI credential file and the matching CA file are available.
@@ -99,6 +101,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Metering mounts management 'ca-bundle/bundle.pem'.
 - The publish-templates test role has an HTTPS mock endpoint signed by the
   fixture CA instead of its current HTTP-only mock.
@@ -125,6 +128,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Empty, malformed, and different-root CA files are available with the same
   TLS fixture used by the positive cases.
 
@@ -151,6 +155,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The new controller envtest suite has a ready ClusterOrder with tenant and
   owner-reference annotations, a guest-cluster reference, a protected
   namespace-scoped AAP credential reference, a separate protected observer
@@ -203,6 +208,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A disposable API target has the configured tenant namespace, an
   installer-owned expected-bundle admission controller whose Deployment and
   webhook are Ready and whose protected store is initialized, and a CSI
@@ -265,6 +271,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The envtest controller begins with a completed, target-verified trust job for
   bundle hash A.
 - The AAP integration targets contain tenant ConfigMaps and CSI Deployments at
@@ -323,6 +330,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The controller integration harness can run a launched trust-sync job with an
   active expected-bundle record paused immediately before either target write.
 - The admission-controller test double serializes record revocation with
@@ -359,6 +367,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Production operator, CSI, and installer values specify a fulfillment endpoint
   and the required CA ConfigMap references.
 
@@ -387,6 +396,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Chart test fixtures omit a ConfigMap name, key, or CA file while retaining a
   fulfillment endpoint.
 
@@ -412,6 +422,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Production values and one named fixture overlay for an intentionally
   self-signed TLS test endpoint are present.
 
@@ -436,6 +447,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - The CaaS E2E environment has fulfillment service signed by the management
   fixture CA and the trust reconciler enabled.
 
@@ -459,6 +471,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - VMaaS E2E installer values mount the management CA and use the fixture DNS
   fulfillment endpoint.
 
@@ -481,6 +494,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - BMaaS E2E installer values mount the management CA and use the fixture DNS
   fulfillment endpoint.
 
@@ -502,6 +516,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A CaaS tenant has a current 'osac-fulfillment-ca' ConfigMap,
   FulfillmentTrustReady=True, and a CSI controller configured to use it.
 
@@ -526,6 +541,7 @@ negative cases. They never reuse production CA keys or credentials.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A supported installer integration environment has a management bundle and a
   fulfillment certificate signed by that bundle.
 

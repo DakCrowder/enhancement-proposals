@@ -21,6 +21,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant admin user is authenticated with JWT token
 - User is a member of tenant `org-a` with `tenant-admin` realm role
 
@@ -42,6 +43,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant admin user is authenticated with JWT token
 - User is a member of tenant `org-a` with `tenant-admin` realm role
 - User is NOT a member of tenant `org-b`
@@ -64,6 +66,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Tenant admin user is authenticated with JWT token
 - User has `tenant-admin` realm role
 
@@ -89,6 +92,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Tenant user is authenticated with JWT token
 - User is a member of tenant `org-a` with `client` role
 
@@ -110,6 +114,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Tenant user is authenticated with JWT token
 - User is a member of tenant `org-a`
 - User has previously created a Subnet named `test-subnet` in `org-a`
@@ -132,6 +137,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Tenant user is authenticated with JWT token
 - User is a member of tenant `org-a`
 - Another user in `org-a` has created a SecurityGroup named `other-sg`
@@ -159,6 +165,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Tenant user is authenticated with JWT token
 - User is a member of tenant `org-a`
 - User has created a VirtualNetwork named `prod-net` in `org-a`
@@ -181,6 +188,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Tenant user is authenticated with JWT token
 - User is a member of tenant `org-a`
 - Another user in `org-a` has created a VirtualNetwork named `other-net`
@@ -208,6 +216,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Admin user is authenticated with JWT token
 
 ##### Steps
@@ -230,6 +239,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Admin user is authenticated with JWT token
 
 ##### Steps
@@ -256,6 +266,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant admin user is authenticated with JWT token
 - User is a member of tenant `org-a` with `tenant-admin` realm role
 
@@ -279,6 +290,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Client user is authenticated with JWT token
 - User has `client` role (not tenant-admin)
 
@@ -306,6 +318,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Tenant user is authenticated with JWT token
 - User initially has permission to create Clusters
 

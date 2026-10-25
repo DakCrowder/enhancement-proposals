@@ -18,6 +18,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Authenticated as Cloud Provider Admin
 - fulfillment-service running
 
@@ -39,6 +40,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - At least one DiskImage exists
 
 ##### Steps
@@ -59,6 +61,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - DiskImage exists with known ID
 
 ##### Steps
@@ -77,6 +80,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - DiskImage exists in AVAILABLE state
 
 ##### Steps
@@ -98,6 +102,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - DiskImage exists with no referencing ComputeInstances, Templates, or CatalogItems
 
 ##### Steps
@@ -118,6 +123,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Authenticated via `osac login`
 - fulfillment-service running
 
@@ -143,6 +149,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Authenticated as Cloud Provider Admin
 
 ##### Steps
@@ -167,6 +174,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - DiskImage exists with source_type=REGISTRY, source_ref="quay.io/test:v1", guest_os_family=LINUX
 
 ##### Steps
@@ -190,6 +198,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Global DiskImage created by Cloud Provider Admin (metadata.tenant == "shared")
 - Users in Tenant A and Tenant B exist
 
@@ -210,6 +219,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant-scoped DiskImage created in Tenant A
 
 ##### Steps
@@ -234,6 +244,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Authenticated as Tenant User (not admin) in Tenant A
 
 ##### Steps
@@ -258,6 +269,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage exists in AVAILABLE state
 
 ##### Steps
@@ -279,6 +291,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage in DEPRECATED state with deprecation_timestamp set
 
 ##### Steps
@@ -300,6 +313,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage in OBSOLETE state with both timestamps set
 
 ##### Steps
@@ -322,6 +336,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - AVAILABLE DiskImage exists with guest_os_family=LINUX, source_ref="quay.io/containerdisks/fedora:41"
 - ComputeInstanceTemplate exists
 
@@ -343,6 +358,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - ComputeInstanceTemplate exists without disk_image default
 
 ##### Steps
@@ -361,6 +377,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - DiskImage exists with source_type=REGISTRY, source_ref="quay.io/containerdisks/fedora:41", guest_os_family=LINUX
 - ComputeInstance created referencing this DiskImage
 
@@ -385,6 +402,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage exists
 - ComputeInstanceTemplate created with spec_defaults.disk_image set to the DiskImage ID
 
@@ -404,6 +422,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - No DiskImage with ID "nonexistent-id" exists
 
 ##### Steps
@@ -425,6 +444,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage exists
 - CatalogItem created with field_definition for spec.disk_image with default set to DiskImage ID
 
@@ -444,6 +464,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage exists in Tenant A
 - Creating CatalogItem in Tenant B
 
@@ -465,6 +486,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Updated proto definitions compiled
 
 ##### Steps
@@ -488,6 +510,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - DiskImage created
 - ComputeInstance created referencing this DiskImage
 
@@ -507,6 +530,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - DiskImage created
 - ComputeInstanceTemplate created with disk_image default referencing this DiskImage
 
@@ -526,6 +550,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage created
 - CatalogItem created with field_definition referencing this DiskImage
 
@@ -545,6 +570,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - DiskImage referenced by ComputeInstance
 - Deletion previously blocked
 
@@ -568,6 +594,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage A in AVAILABLE state
 - DiskImage B in OBSOLETE state
 
@@ -588,6 +615,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage in OBSOLETE state
 
 ##### Steps
@@ -606,6 +634,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage exists in Tenant A (tenant-scoped)
 - Authenticated as Tenant User in Tenant B
 
@@ -628,6 +657,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage in OBSOLETE state
 
 ##### Steps
@@ -646,6 +676,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - DiskImage in DEPRECATED state
 
 ##### Steps
@@ -671,6 +702,7 @@ No standalone test case — OSAC-2921 dependency. DiskImage uses Metadata fields
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - DiskImage with guest_os_family=WINDOWS exists
 - ComputeInstance referencing this DiskImage
 

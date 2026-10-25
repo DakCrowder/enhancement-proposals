@@ -20,6 +20,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - osac-installer deployed to cluster
 - No existing ConfigMap `k8s-manager-cudn-evpn` in osac namespace
 
@@ -47,6 +48,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - NetworkClass with fabric_manager="netris", k8s_manager="cudn_evpn"
 - VirtualNetwork created with this NetworkClass
 - Mocked Netris fabric returning VNI values
@@ -75,6 +77,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Subnet provisioning in progress, fabric job completed
 - Fabric AAP Job CR exists but status.extraVars missing VNI fields
 
@@ -102,6 +105,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Subnet created with NetworkClass k8s_manager="cudn_evpn"
 - K8s manager job running
 
@@ -134,6 +138,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - CUDN provisioned with subnet 200.200.1.0/24
 - VirtualMachine deployed in CUDN namespace, IP 200.200.1.3
 - Bare-metal node provisioned on Netris fabric in same subnet, IP 200.200.1.10
@@ -161,6 +166,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - CUDN provisioned with subnet 200.200.1.0/24
 - VirtualMachine deployed in CUDN namespace, IP 200.200.1.3
 - Bare-metal node provisioned on Netris fabric in different subnet 200.200.2.0/24, IP 200.200.2.10
@@ -189,6 +195,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - NetworkClass with k8s_manager="cudn_evpn"
 - VirtualNetwork created with this NetworkClass
 - One Subnet already exists under this VirtualNetwork
@@ -214,6 +221,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - NetworkClass with k8s_manager="cudn_localnet" (not cudn_evpn)
 - VirtualNetwork created with this NetworkClass
 - One Subnet already exists under this VirtualNetwork
@@ -237,6 +245,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - NetworkClass with k8s_manager="cudn_evpn"
 - VirtualNetwork created with this NetworkClass
 - One Subnet already exists under this VirtualNetwork (without skip annotation, CUDN created)
@@ -269,6 +278,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - CUDN provisioned with subnet 200.200.1.0/24
 - Netris VNet configured with DHCP enabled (default), DHCP range 200.200.1.100-200.200.1.200
 
@@ -387,6 +397,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - CUDN provisioned with subnet
 - VirtualMachine running in CUDN namespace
 - Subnet marked for deletion (finalizer present)
@@ -417,6 +428,7 @@
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - CUDN deleted successfully (confirmed via `oc get clusteruserdefinednetwork`)
 - VRF device persists on worker node (observed rare race condition)
 - Cloud Infrastructure Admin troubleshooting connectivity issue

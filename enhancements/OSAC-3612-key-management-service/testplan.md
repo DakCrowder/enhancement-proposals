@@ -21,6 +21,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - HashiCorp Vault Transit and the key-scoped consumer policy are ready, and the caller is a Tenant Admin in tenant `tenant-a`.
 
 ##### Steps
@@ -43,6 +44,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - HashiCorp Vault Transit is ready and the caller has existing Cloud Provider Admin access.
 
 ##### Steps
@@ -68,6 +70,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The CLI is authenticated as a Tenant Admin and the Transit backend is ready.
 
 ##### Steps
@@ -92,6 +95,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The Transit test provider can apply key creation, and the test can force the final PostgreSQL commit to fail.
 
 ##### Steps
@@ -114,6 +118,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An Events watch is active for a Tenant Admin's visible resources.
 
 ##### Steps
@@ -136,6 +141,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active key is confirmed at version `1`, and the test can interrupt Vault and remove its key out of band.
 
 ##### Steps
@@ -160,6 +166,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active key exists at version `1`.
 
 ##### Steps
@@ -182,6 +189,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A Rotate has completed at version `2`.
 
 ##### Steps
@@ -202,6 +210,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active key is confirmed at version `1`, and the test can fail the request transaction's final commit after Vault rotates successfully.
 
 ##### Steps
@@ -223,6 +232,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - `cli-key` is active at version `1`.
 
 ##### Steps
@@ -243,6 +253,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The Transit test provider can hold the first Rotate POST in flight while reads still report version `1`.
 
 ##### Steps
@@ -265,6 +276,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active key is at generation `1`, and the caller knows its current `metadata.version`.
 
 ##### Steps
@@ -291,6 +303,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A key has two material versions and is active; a consumer token issued before revocation has only that key's policy.
 
 ##### Steps
@@ -312,6 +325,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A tenant-owned key has `state=REVOKED` and `revocation_timestamp` set, and the caller is its Tenant Admin.
 
 ##### Steps
@@ -334,6 +348,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The CLI is authenticated with lifecycle authority over an active key.
 
 ##### Steps
@@ -359,6 +374,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A revoked key has a consumer token, and the test can fail the final database commit after Vault restores access.
 
 ##### Steps
@@ -381,6 +397,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active tenant-owned key exists in project `p1` of `tenant-a`, and a reference-validation unit fixture has an owning resource in that tenant and project.
 
 ##### Steps
@@ -401,6 +418,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - One active key exists in project `p1` of `tenant-a`, one revoked key exists in project `p1` of `tenant-b`, and the reference-validation fixture can run under either tenant and in named projects.
 
 ##### Steps
@@ -424,6 +442,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A key is active or revoked; OSAC-3612 has no concrete key-consuming resource.
 
 ##### Steps
@@ -449,6 +468,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant-owned keys exist in `tenant-a` and `tenant-b`, and a provider-owned key exists in `system`; caller administers only `tenant-a`.
 
 ##### Steps
@@ -469,6 +489,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The caller has an ordinary client token without `tenant-admin` or an existing administrator identity.
 
 ##### Steps
@@ -487,6 +508,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Tenant-owned keys exist in two tenants and a provider-owned key exists in `system`.
 
 ##### Steps
@@ -507,6 +529,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The Cloud Infrastructure Admin caller has an ordinary client token: no `tenant-admin` realm role, no admin group membership, and no admin service-account identity. Read-only platform monitoring access is provisioned separately.
 
 ##### Steps
@@ -529,6 +552,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Helm values define a `vault-transit` backend, one shared `kms.policy` selecting it with `algorithm=aes256-gcm96`, Transit backend with tenant namespaces as the initial certification candidate, and a key-scoped consumer credential path.
 
 ##### Steps
@@ -551,6 +575,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - Configuration points to Vault Transit with an inaccessible mount, missing tenant namespace support, or consumer credentials that bypass the key-specific policy.
 
 ##### Steps
@@ -572,6 +597,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - Helm/schema validation tools are available.
 
 ##### Steps
@@ -595,6 +621,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A configured backend can be made reachable and unreachable during the test. Prometheus scrapes the Fulfillment gRPC metrics Service; a Cloud Infrastructure Admin has read-only access to request metrics and operational logs. A separate Tenant Admin can create keys.
 
 ##### Steps
@@ -619,6 +646,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An active key is at version `1`, and the provider reports a policy conflict with proof that rotation had no effect.
 
 ##### Steps
@@ -639,6 +667,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A live key has no concrete consumer reference, and the test can fail the final database commit after Vault deletes its key.
 
 ##### Steps
@@ -661,6 +690,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A deployed Fulfillment Service, PostgreSQL, Keycloak, Transit backend are available.
 
 ##### Steps
@@ -683,6 +713,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - The OSAC CLI is authenticated as Tenant Admin against a deployed environment with a ready Transit backend.
 
 ##### Steps
@@ -709,6 +740,7 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The operator CLI runbook and a Transit test deployment are available. The test can make the Vault version history incomplete.
 
 ##### Steps
@@ -733,11 +765,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Preconditions:** Tenant `a` has active keys in its default project, named project `p1`, and sibling project `p2`. An encrypt-role JWT belongs to tenant `a` and has membership in `p1` but not `p2`; a different identity belongs to tenant `b`, which has a key. Fulfillment and PostgreSQL run for real.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** List keys, Get each ID, then Encrypt by ID. Try tenant `b`'s key with the tenant `a` JWT. Repeat with a JWT lacking either crypto role. Attempt to create a key in an invisible named project as Tenant Admin.
 
 **Expected results:** The caller discovers tenant `a` default and `p1` keys, but neither lists nor gets the `p2` or tenant `b` keys. Encrypt on either hidden key returns `NotFound`, including when its ID is known. The caller without a crypto role cannot List or Get. Create in an invisible project is rejected before Vault creates a key. A parent-project membership also exposes descendant-project keys.
 
 #### TC-FR10-02: Encrypt and decrypt roles are independent
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Tier:** Unit
 - **Owner:** [DEV]
@@ -759,6 +797,8 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Preconditions:** Fulfillment, PostgreSQL, REST gateway, Keycloak, and Transit run for real with an active key and tenant-scoped crypto-role JWT.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Encrypt and decrypt binary data through gRPC and REST, including a 65536-byte plaintext. Submit empty and 65537-byte plaintext; empty and longer-than-131072-byte ciphertext; malformed and non-UTF-8 Transit ciphertext, invalid REST base64, and ciphertext from another key. Verify that the REST ciphertext is base64 of the complete Vault versioned string bytes and that the same bytes decrypt through gRPC.
 
 **Expected results:** Round trips recover identical bytes; REST represents both plaintext and ciphertext bytes as base64. Encrypt returns opaque ciphertext bytes and confirmed generation `1`. Transit ciphertext bytes equal the UTF-8 bytes of Vault's complete versioned string, with no decoding of its internal base64 segment. Invalid inputs and failed decryption return redacted `InvalidArgument`, with no payload in events or persisted key data. Crypto calls do not increment key metadata version.
@@ -772,6 +812,8 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 - **Automation:** automated
 
 **Preconditions:** A real Transit key has confirmed generation `1`; provider conformance tests can observe Vault requests and force a failed OSAC commit after Rotate.
+
+- **Tier / owner:** Component integration / [DEV].
 
 **Steps:** Encrypt before and after a successful Rotate, decrypt both ciphertexts, then rotate Vault while failing the OSAC commit and Encrypt again before reconciliation.
 
@@ -787,11 +829,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Preconditions:** A real Transit key has two retained generations, ciphertext from each, and a previously issued key-scoped consumer token.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Revoke, try Encrypt and Decrypt for both generations through OSAC and the previously issued Vault token, Recover, retry, then Delete and retry.
 
 **Expected results:** Revoke denies both operations for every version through both paths. Recover permits new encryption and decryption of retained ciphertext. After Delete, both OSAC methods return `NotFound`; previously stored ciphertext is permanently undecryptable. The management credential is not used for direct crypto.
 
 #### TC-FR10-06: Crypto calls serialize with lifecycle changes and deny uncertain access
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 - **Tier:** component-integration
 - **Owner:** [DEV]
@@ -804,6 +852,10 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 **Expected results:** Revoke confirms only after the in-flight Encrypt finishes, and subsequent crypto calls fail. When OSAC still says active but Vault denies after failed Revoke commit, no call succeeds. When OSAC still says revoked but Vault allows after failed Recover commit, no call succeeds. A provider outage returns `Unavailable` without claiming a state change.
 
 #### TC-FR10-07: Crypto payloads stay out of logs
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 - **Tier:** Unit
 - **Owner:** [DEV]
@@ -825,11 +877,17 @@ The PRD has no FR/NFR identifiers. The FR-1 through FR-10 headings below are the
 
 **Preconditions:** The `fulfillment-service/it/` harness runs a built CLI and deployed Fulfillment API with a ready Transit backend.
 
+- **Tier / owner:** Component integration / [DEV].
+
 **Steps:** Discover an active visible key, pipe binary input to `osac encrypt key <id>`, pipe the resulting ciphertext to `osac decrypt key <id>`, and attempt decrypted output to an interactive terminal.
 
 **Expected results:** CLI ciphertext output is byte-for-byte the Encrypt response with no added newline, and the decrypted output matches the input bytes. Decrypt refuses interactive-terminal output; neither command accepts plaintext as an argument or logs payloads. A caller outside the named project cannot discover or use its key.
 
 #### TC-FR10-09: Deployed user journey crosses identity, API, database, and Vault
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 - **Tier:** E2E
 - **Owner:** [QE]
