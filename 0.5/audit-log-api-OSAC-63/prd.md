@@ -33,9 +33,15 @@ actions (organization lifecycle, role changes, IdP configuration, project
 permissions). This first increment captures events from services that
 already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
-- Authentication events from the organization's Keycloak realm — login
-success/failure, token operations, session events — appear in the
-tenant's audit trail. [Clarify: D3]
+- OSAC uses a single shared Keycloak realm, with a Keycloak organization for
+each OSAC tenant. Authentication events (login success/failure, token
+operations, and session events) from that realm are captured for the
+corresponding tenant organization and appear in that tenant's audit trail.
+[Clarify: D3]
+- Audit records and events forwarded to the audit log must not contain
+password values, token values, private keys, or other credential contents.
+For credential access, the audit record states that access occurred,
+what was accessed, and the outcome without including credential values.
 - Tenant-scoped and cross-tenant query via gRPC and HTTP+JSON API.
 Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
