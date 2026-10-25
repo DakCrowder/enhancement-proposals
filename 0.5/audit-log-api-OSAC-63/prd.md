@@ -61,6 +61,8 @@ production-hardened. [Clarify: D1]
 
 ## Out of Scope
 
+- Actor attribution for resource lifecycle events is deferred until
+OSAC-6154 delivers it. [User]
 - Cryptographic integrity verification —
 follow-up Feature under the same Outcome (OSAC-3415). This first
 increment provides append-only immutability; cryptographic
@@ -148,7 +150,7 @@ platform-wide placement guarantee.
 
 ## Dependencies
 
-- **OSAC-6154 (blocking):** Audit records for resource lifecycle
+- **OSAC-6154:** Audit records for resource lifecycle
 actions must identify the user who initiated the action. Until
 OSAC-6154 delivers actor attribution for resource lifecycle events,
 those audit records cannot attribute actions to users. [Clarify: D2]
