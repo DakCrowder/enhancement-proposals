@@ -23,6 +23,8 @@ backward compatibility.
 
 **Preconditions:** DiskImage exists with `guest_os_family = WINDOWS`.
 
+- **Tier / owner:** Unit / [DEV].
+
 **Steps:**
 1. Call CreateComputeInstance with `disk_image` referencing the Windows
    DiskImage and `user_data` containing well-formed XML:
@@ -40,6 +42,10 @@ backward compatibility.
 
 #### TC-1.2: Reject malformed XML inline user_data for Windows VM
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: reject if `user_data` is not well-formed XML on Windows |
@@ -54,6 +60,10 @@ backward compatibility.
 
 #### TC-1.3: Accept non-XML user_data for Linux VM (no validation)
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: XML validation only when DiskImage is Windows |
@@ -66,6 +76,10 @@ backward compatibility.
 2. Verify: create succeeds — no XML validation applied.
 
 #### TC-1.4: Validate user_data_secret content as XML for Windows VM
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -81,6 +95,10 @@ backward compatibility.
 
 #### TC-1.5: Reject user_data_secret with malformed XML for Windows VM
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: `user_data_secret` validation consistent with inline |
@@ -94,6 +112,10 @@ backward compatibility.
 3. Verify: create fails with error that does NOT expose secret content.
 
 #### TC-1.6: Create Windows VM without user_data (no caller-supplied answer file)
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -112,6 +134,10 @@ backward compatibility.
 
 #### TC-1.7: Reject empty user_data for Windows VM
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: empty payloads rejected when field is present |
@@ -125,6 +151,10 @@ backward compatibility.
 
 #### TC-1.8: Mutual exclusion of user_data and user_data_secret (existing)
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: mutually exclusive fields |
@@ -137,6 +167,10 @@ backward compatibility.
    no regression.)
 
 #### TC-1.9: Reject XML with DOCTYPE declaration for Windows VM
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -157,6 +191,10 @@ backward compatibility.
 
 #### TC-1.10: Reject whitespace-only user_data for Windows VM
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: require a valid XML root element |
@@ -170,6 +208,10 @@ backward compatibility.
    `"document is empty"`.
 
 #### TC-1.11: Reject XML fragment with multiple root elements for Windows VM
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -187,6 +229,10 @@ backward compatibility.
    `"multiple root elements"`.
 
 #### TC-1.12: Reject user_data_secret with DOCTYPE declaration for Windows VM
+
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -213,6 +259,8 @@ backward compatibility.
 | Test Type | Integration (AAP role) |
 
 **Preconditions:** ComputeInstance CR with `guestOSFamily: windows` and
+- **Tier / owner:** Component integration / [DEV].
+
 `userDataSecretRef` pointing to a Secret with user-supplied Unattend.xml
 content.
 
@@ -232,6 +280,8 @@ content.
 | Test Type | Integration (AAP role) |
 
 **Preconditions:** ComputeInstance CR with `guestOSFamily: windows` and NO
+- **Tier / owner:** Component integration / [DEV].
+
 `userDataSecretRef`.
 
 **Steps:**
@@ -249,6 +299,8 @@ content.
 | Test Type | Integration (AAP role) |
 
 **Preconditions:** ComputeInstance CR with `guestOSFamily: linux` and
+- **Tier / owner:** Component integration / [DEV].
+
 `userDataSecretRef` set.
 
 **Steps:**
@@ -258,6 +310,10 @@ content.
 3. Verify: NO sysprep volume is created.
 
 #### TC-3.5: Secret key mapping — userdata to Unattend.xml
+
+##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 | Field | Value |
 |-------|-------|
@@ -276,6 +332,10 @@ content.
 
 #### TC-4.1: CLI help text references Unattend.xml for Windows
 
+##### Preconditions
+
+- **Tier / owner:** Unit / [DEV].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: CLI supplies Unattend.xml through existing mechanism |
@@ -293,6 +353,10 @@ content.
 
 #### TC-5.1: UI shows Unattend.xml label for Windows DiskImage
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | FR: UI supplies Unattend.xml through existing mechanism |
@@ -307,6 +371,10 @@ content.
 
 #### TC-5.2: UI shows cloud-init label for Linux DiskImage
 
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
+
 | Field | Value |
 |-------|-------|
 | PRD Requirements | Backward compatibility — Linux UI unaffected |
@@ -319,6 +387,10 @@ content.
 3. Verify: the user data input is labeled for cloud-init (existing behavior).
 
 #### TC-5.3: UI does not persist user_data in browser storage
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 | Field | Value |
 |-------|-------|
@@ -342,6 +414,8 @@ content.
 | Test Type | E2E (pytest) |
 
 **Preconditions:** Windows DiskImage available; tenant project with
+- **Tier / owner:** E2E / [QE].
+
 appropriate permissions.
 
 **Steps:**
@@ -354,6 +428,10 @@ appropriate permissions.
 4. Verify: Windows first boot follows the answer file settings.
 
 #### TC-E2E-2: Windows VM without user_data (no answer file)
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 | Field | Value |
 |-------|-------|
@@ -369,6 +447,10 @@ appropriate permissions.
 4. Verify: the VM boots without any answer file.
 
 #### TC-E2E-3: Windows VM with user_data_secret delivery
+
+##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 | Field | Value |
 |-------|-------|

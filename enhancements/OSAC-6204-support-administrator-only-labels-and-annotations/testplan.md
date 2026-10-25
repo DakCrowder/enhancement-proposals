@@ -82,6 +82,8 @@ Remote integration or E2E execution must follow `~/.codex/skills/remote-integrat
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 For each of the 35 persistent types, seed valid dependencies and an object with ordinary entries in both maps. The administrator account has existing platform-admin authority.
 
 ##### Steps
@@ -104,6 +106,8 @@ For each of the 35 persistent types, seed valid dependencies and an object with 
 **Tier:** Unit; component integration
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 An administrator reads a private object with two ordinary and two reserved entries in each map, plus an unrelated mutable field.
 
@@ -129,6 +133,8 @@ An administrator reads a private object with two ordinary and two reserved entri
 **Tier:** Component integration; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Fixtures cover NetworkClass, VirtualNetwork, Subnet, SecurityGroup, ExternalIPPool, ExternalIP, ExternalIPAttachment, NATGateway, and FabricDomain in valid stored states. Record existing metadata operations, operational/default-label checks, and immutable-field restrictions. The first eight have no public Update; FabricDomain has public/private Update under existing permissions.
 
@@ -156,6 +162,8 @@ Fixtures cover NetworkClass, VirtualNetwork, Subnet, SecurityGroup, ExternalIPPo
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 A mutable private object has multiple entries in both maps and a known version. Use the existing generated gateway and default query parser.
 
 ##### Steps
@@ -179,6 +187,8 @@ A mutable private object has multiple entries in both maps and a known version. 
 **Tier:** CLI unit; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 The existing CLI has private administrator credentials against a server implementing this feature and resolves all inventory types through existing names/aliases.
 
@@ -204,6 +214,8 @@ The existing CLI has private administrator credentials against a server implemen
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
+
 The administrator can sign in to the deployed console using existing credentials. Valid fixtures exist for all 35 types; private schema/proxy support matches the API.
 
 ##### Steps
@@ -227,6 +239,8 @@ The administrator can sign in to the deployed console using existing credentials
 **Tier:** Auth unit; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Accounts cover the administrator, Tenant Admin, Tenant User, and the restricted private CSI client. Record their existing allowed methods, object scope, and tenant visibility as the baseline.
 
@@ -252,6 +266,8 @@ Accounts cover the administrator, Tenant Admin, Tenant User, and the restricted 
 **Tier:** Component integration; deployed Fulfillment; CLI/UI unit
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 An administrator reads a complete map at version v; a second authorized update changes an otherwise untouched entry and advances the row to v+1.
 
@@ -281,6 +297,8 @@ An administrator reads a complete map at version v; a second authorized update c
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 For each of the 32 public persistent metadata-bearing types, including Volume and FabricDomain, seed both maps with ordinary and reserved entries. Include nested Metadata and authorized private-service controls.
 
 ##### Steps
@@ -304,6 +322,8 @@ For each of the 32 public persistent metadata-bearing types, including Volume an
 **Tier:** Events component integration; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Real Kafka-backed EventsServer coverage is available. Public watches are ready before publication; seed an object with both map kinds and register a watcher with existing private Watch permission.
 
@@ -329,6 +349,8 @@ Real Kafka-backed EventsServer coverage is available. Public watches are ready b
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Prepare otherwise identical objects with the target reserved key present and absent, plus ordinary metadata matches and nonmatches.
 
 ##### Steps
@@ -353,6 +375,8 @@ Prepare otherwise identical objects with the target reserved key present and abs
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
+
 Tenant Admin and Tenant User sessions have access to objects with unique reserved marker values and ordinary catalog/search metadata.
 
 ##### Steps
@@ -376,6 +400,8 @@ Tenant Admin and Tenant User sessions have access to objects with unique reserve
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 The existing CSI identity has universal tenant visibility and private Volume Create/Get/Delete/List permission, without Update. Seed valid Volume dependencies and fixtures across two tenants.
 
 ##### Steps
@@ -398,6 +424,8 @@ The existing CSI identity has universal tenant visibility and private Volume Cre
 **Tier:** Projection/input unit; component integration
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 SelfSubjectAccessReview is an ephemeral message carrying Metadata, not one of the 35 persistent objects.
 
@@ -424,6 +452,8 @@ SelfSubjectAccessReview is an ephemeral message carrying Metadata, not one of th
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Both tenant personas have valid create permissions on representative mutable services and valid referenced dependencies. Complete existing account setup before the case; record object count and resource dependency/provisioning side effects.
 
 ##### Steps
@@ -446,6 +476,8 @@ Both tenant personas have valid create permissions on representative mutable ser
 **Tier:** Input/candidate unit; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 A tenant-visible object has ordinary metadata and stored reserved entries; take a complete authorized private snapshot including version.
 
@@ -471,6 +503,8 @@ A tenant-visible object has ordinary metadata and stored reserved entries; take 
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Existing clients call public Update with ordinary update_mask; capture complete private snapshots for otherwise identical objects with a reserved key present and absent.
 
 ##### Steps
@@ -495,6 +529,8 @@ Existing clients call public Update with ordinary update_mask; capture complete 
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Tenant CLI credentials can edit ordinary metadata; reserved entries are hidden by Get. Capture the full object/version and record Update invocations.
 
 ##### Steps
@@ -518,6 +554,8 @@ Tenant CLI credentials can edit ordinary metadata; reserved entries are hidden b
 **Tier:** UI/proxy unit; deployed Fulfillment; deployed browser E2E
 
 ##### Preconditions
+
+- **Tier / owner:** E2E / [QE].
 
 A tenant has pending ordinary edits and an object with reserved entries. Capture its full private snapshot; transport fixtures can submit reserved entries directly to the backend.
 
@@ -544,6 +582,8 @@ A tenant has pending ordinary edits and an object with reserved entries. Capture
 **Tier:** Candidate unit; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 A tenant-visible mutable object contains multiple ordinary/reserved entries in both maps. Capture the complete private object and its version. Record each public wrapper's baseline unmasked map behavior; include ComputeInstance's nonempty-map merge.
 
@@ -572,6 +612,8 @@ A tenant-visible mutable object contains multiple ordinary/reserved entries in b
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Use valid ordinary keys including osac.openshift.io/tenant and osac.openshift.io/owner-reference where the existing API permits them, plus near-prefix strings accepted by existing syntax validation.
 
 ##### Steps
@@ -595,6 +637,8 @@ Use valid ordinary keys including osac.openshift.io/tenant and osac.openshift.io
 **Tier:** Real-PostgreSQL component integration; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 A tenant reads its visible maps/version v; an administrator adds, changes, or removes a reserved entry and commits before the tenant Update acquires the row.
 
@@ -620,6 +664,8 @@ A tenant reads its visible maps/version v; an administrator adds, changes, or re
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
+
 Objects have ordinary match/nonmatch metadata and hidden reserved entries; existing accepted filter expressions and baseline counts are recorded.
 
 ##### Steps
@@ -642,6 +688,8 @@ Objects have ordinary match/nonmatch metadata and hidden reserved entries; exist
 **Tier:** CLI/UI unit; deployed Fulfillment
 
 ##### Preconditions
+
+- **Tier / owner:** Component integration / [DEV].
 
 Use existing and older CLI fixtures against feature-enabled servers, ordinary client fixtures against legacy servers, existing ordinary console controls, public networking services, and private networking fixtures with recorded allowed metadata operations.
 

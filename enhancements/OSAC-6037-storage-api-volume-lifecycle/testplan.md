@@ -82,6 +82,7 @@ These are proposed test budgets, not product SLAs.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A ComputeInstance fixture whose persisted, resolved disks match the payload table below. Each StorageTier has a distinct fixture ID and canonical name; exercise original references supplied by name and by ID.
 - Input variants produce the same resolved disks through explicit values, editable Catalog defaults and Template boot-disk defaults. Include partial boot overrides so omitted fields inherit defaults without replacing supplied fields. Additional disks may inherit an omitted Catalog list; do not invent Template additional-disk defaults.
 - A controlled Volume API returns distinct IDs and captures full requests; a controlled AAP client captures its inputs. H1 exercises real server/default/reference resolution and persistence; H2 drives dispatch, validation and restart with controlled dependencies.
@@ -128,6 +129,7 @@ These are proposed test budgets, not product SLAs.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - An AAP integration scenario executes the real DataVolume creation tasks of the Ansible template corresponding to the ComputeInstance CR. Any separate Volume-subsystem AAP workflow is outside this case.
 - Inputs include boot and additional disk keys/IDs, existing tenant storage mappings and a legacy instance fixture.
 
@@ -153,6 +155,7 @@ These are proposed test budgets, not product SLAs.
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A ComputeInstance requiring boot and additional disks, with the boot Volume ID already persisted.
 - Controlled Volume API responses and AAP calls; the additional-disk Create can return an explicit failure without committing, then return an ID on a later attempt.
 - The failure fixture includes a safe error category and synthetic private-detail markers, allowing assertions that the public message explains the failure without echoing raw internal text.
@@ -181,6 +184,7 @@ These are proposed test budgets, not product SLAs.
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - The real existing Volume API and PostgreSQL are available with their normal name-uniqueness, attribution and List behavior. The caller persists private registration state before dispatch.
 - A boot/additional-disk ComputeInstance fixture created through the public API has a user creator different from `system`, immutable tenant/project and resolved disk values, persisted disk keys/dispatch state, and no AAP job dispatched. The private Volume API uses its normal `system` attribution. Include both a named project and the empty/default project, plus another tenant/project and conflicting records for isolation checks. No per-disk name, scope, creator or spec snapshot is provided to the caller.
 - H5 has a transport fixture that forwards Create to the real server and drops the response only after independently confirming commit. The test knows the original ID as an oracle but must not hand it to the restarted caller.
@@ -216,6 +220,7 @@ These are proposed test budgets, not product SLAs.
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - H4 runs deployed Fulfillment, operator, AAP and the existing VM storage path in an isolated stack accepting the VMaaS Volume API requests. This case proves workload/record-cleanup ordering; handling extra physical allocations from Volume API remains Storage-owned.
 - A ComputeInstance has boot/additional Volume IDs and matching DataVolume annotations.
 - Fixtures can hold and release the existing AAP deletion job, add/remove their own Volume-record finalizers through the existing private API, and capture ordered API/job/CR/parent events. They never remove a production controller or CSI finalizer.
@@ -248,6 +253,7 @@ H4 needs job-progression and test-owned record-finalizer fixtures plus ordered o
 
 ##### Preconditions
 
+- **Tier / owner:** Unit / [DEV].
 - A managed ComputeInstance has persisted disk IDs and has reached its existing workload-lifecycle completion point.
 - Controlled Volume Get/Delete results, a parent-finalizer observer and explicit reconciliation barriers are available.
 
@@ -273,6 +279,7 @@ H4 needs job-progression and test-owned record-finalizer fixtures plus ordered o
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - Managed fixtures contain persisted boot/additional IDs or unresolved registration intent; TC-C-06 supplies the real lost-Create-response contract.
 - H2 can represent an existing AAP job in progress, an absent ComputeInstance CR, no assigned hub and a decommissioned hub. H1 persists parent finalizers and status across caller restart.
 - H4 can cancel an instance during existing provisioning before PVC binding, using a reproducible fixture barrier. No PV name or CSI handle is supplied to the new record-cleanup caller.
@@ -304,6 +311,7 @@ H4 needs job-progression and test-owned record-finalizer fixtures plus ordered o
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - ComputeInstance fixtures with no recorded ID yet, partial registration with a confirmed failure, uncertain-outcome recovery and completed registration; each has private registration state. A second tenant fixture is available.
 - Public Get/List and update paths are available in H1. H2 uses the existing CLI get command fixture with controlled API responses for JSON/YAML rendering; no deployed workload is required.
 
@@ -333,6 +341,7 @@ H4 needs job-progression and test-owned record-finalizer fixtures plus ordered o
 
 ##### Preconditions
 
+- **Tier / owner:** Component integration / [DEV].
 - A VMaaS client using the existing private API, a deployed Fulfillment service and authenticated tenant fixtures.
 - Candidate Volume API/database versions and configured StorageTier fixtures for every supported VM tier, including LVMS. Use the Section 4.1 canonical tier name, requested integer GiB size and READ_WRITE_ONCE mode before AAP dispatch; leave node topology unset. Use normal server validation and tier resolution. H5 tests API acceptance and record persistence/recovery/removal with the operator disabled; required API compatibility changes belong to Storage.
 
@@ -368,6 +377,7 @@ H5 has an existing runner but needs the VMaaS caller-contract fixtures and asser
 
 ##### Preconditions
 
+- **Tier / owner:** E2E / [QE].
 - A legacy ComputeInstance fixture with neither private managed registration state nor Volume ID status entries. Unresolved managed requests are covered by TC-C-06 and must not enter this path.
 - Existing AAP storage mappings and the current physical storage backend.
 
