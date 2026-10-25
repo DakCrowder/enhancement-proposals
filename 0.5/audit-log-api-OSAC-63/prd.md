@@ -80,6 +80,9 @@ integration are a follow-up Feature).
 - Audit log forwarding to external SIEM systems.
 - Data-plane audit logging (individual object reads/writes in storage,
 network packet logging) — control-plane actions only.
+- Native audit events produced by ACM or OCP, including actions performed
+directly in those products, are out of scope. This increment captures
+events emitted by OSAC services only.
 - Audit log analytics and dashboards.
 - Specific regulatory certification (GDPR, DPDPA, NIS2) — this feature
 provides the technical controls; certification is an organizational
