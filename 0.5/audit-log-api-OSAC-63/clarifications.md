@@ -244,8 +244,9 @@ or alternative capture mechanisms.
 
 #### Decision (D8)
 
-All OSAC services (BMaaS, CaaS, VMaaS, MaaS, Enclave) are in scope
-for audit event capture in 0.5.
+For BMaaS, CaaS, VMaaS, MaaS, and Enclave, audit event capture is limited
+to service and event-type combinations that already have audit event
+support.
 
 ---
 
