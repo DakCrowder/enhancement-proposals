@@ -65,6 +65,9 @@ production-hardened. [Clarify: D1]
 follow-up Feature under the same Outcome (OSAC-3415). This first
 increment provides append-only immutability; cryptographic
 tamper-evidence is a later increment.
+- Fail-closed behavior when audit event capture or delivery is unavailable
+— follow-up Feature. This increment is fail-open: platform actions may
+proceed when audit events cannot be captured or delivered.
 - Bulk export of audit records in JSON and CSV — follow-up Feature.
 The paginated query API serves compliance workflows initially.
 - Before/after state capture for resource mutations — follow-up Feature.
