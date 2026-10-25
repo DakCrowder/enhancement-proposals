@@ -665,7 +665,7 @@ fulfillment-service's existing Hub credential resolution path.
   a `rest.Config` rather than a pre-built `Client`. The proposed
   implementation calls `ResolveHubKubeconfig()` (existing helper) to
   obtain kubeconfig bytes, then uses `clientcmd.RESTConfigFromKubeConfig()`
-  (the same standard-library call `HubCache` uses internally) to build
+  (the same client-go call `HubCache` uses internally) to build
   a `rest.Config`, from which it constructs the ManagedCluster
   informer. This shares the same Hub credentials used by all other
   fulfillment-service controllers — no separate credential source,
