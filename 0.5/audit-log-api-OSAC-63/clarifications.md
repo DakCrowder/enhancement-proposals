@@ -19,18 +19,18 @@ deferred to later milestones?
 
 #### Answer
 
-All DoD items are in scope for 0.5. "Dev Preview" means the feature is
-functional but not production-hardened — e.g., retention policy is
-configurable but not yet tested at scale, crypto integrity is implemented
-but not yet independently audited.
+The 0.5 Dev Preview is the walking skeleton: audit event capture
+(including Keycloak authentication events), query, and API-level
+append-only immutability. Cryptographic integrity, bulk export,
+before/after state, and configurable retention are deferred to follow-up
+Features. Dev Preview means functional but not production-hardened.
 
 #### Impact
 
-The PRD will declare all DoD items as in-scope for 0.5 and describe the
-Dev Preview maturity level. No phased delivery — all capabilities ship
-together. The PRD should note that production hardening (scale testing,
-independent audit of crypto integrity, retention policy stress testing)
-is a follow-up for a later milestone.
+The PRD will define the 0.5 scope as audit event capture, query, and
+API-level append-only immutability, and identify cryptographic integrity,
+bulk export, before/after state, and configurable retention as follow-up
+Features. It will describe the Dev Preview maturity level.
 
 #### Decision (D1)
 
@@ -104,14 +104,15 @@ specific resource types?
 
 #### Answer
 
-Full before/after capture for all resource mutations in 0.5.
+Before/after state capture is deferred to a follow-up Feature. In 0.5,
+audit records capture the action and target resource without full state
+diffs.
 
 #### Impact
 
-The PRD will require before/after state capture for all audited
-resource mutations. The design will need to address payload size
-management (e.g., diff-only vs. full snapshots, compression, storage
-implications).
+The PRD will identify before/after state capture as deferred. The 0.5
+design covers the action and target resource; a follow-up Feature can
+address full state diffs and their storage implications.
 
 #### Decision (D4)
 
@@ -133,15 +134,15 @@ operations?
 
 #### Answer
 
-Cryptographic integrity verification is required.
+API-level append-only immutability is the 0.5 requirement: APIs expose
+no update or delete operations for audit records. Cryptographic
+integrity verification is deferred to a follow-up Feature.
 
 #### Impact
 
-The PRD will require cryptographic tamper-evidence (e.g., hash chains
-or Merkle trees) in addition to API-level immutability. This is a
-significant requirement that affects storage design, query
-performance, and verification workflows. The design must address the
-specific cryptographic mechanism.
+The PRD will require API-level append-only immutability and identify
+storage-level cryptographic tamper-evidence as deferred. A follow-up
+Feature will define the integrity mechanism and verification workflow.
 
 #### Decision (D5)
 
@@ -308,16 +309,15 @@ retention policy, and what is the default?
 
 #### Answer
 
-Helm default plus runtime-adjustable by Cloud Provider Admin. The
-minimum is 30 days (per NVIDIA SEC08). The default and any maximum
-are to be determined by the design.
+Records are retained indefinitely in the 0.5 walking skeleton.
+Configurable retention, including a minimum retention floor and
+runtime adjustment, is deferred to a follow-up Feature.
 
 #### Impact
 
-The PRD will require: (1) a default retention period set via Helm
-values at installation; (2) a runtime API for the Cloud Provider Admin
-to adjust the retention period, subject to the 30-day minimum floor.
-The specific default value and any upper bound are design decisions.
+The PRD will specify indefinite retention for the 0.5 walking skeleton
+and identify retention management as deferred. It will not require
+Helm-configured retention or a runtime retention API in 0.5.
 
 #### Decision (D10)
 
