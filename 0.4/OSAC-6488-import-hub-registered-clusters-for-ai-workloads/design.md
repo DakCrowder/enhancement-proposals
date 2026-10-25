@@ -44,9 +44,10 @@ The design directly consumes OCM `ManagedCluster` CRDs on the Hub via
 list/watch reconciliation, uses declarative conditions rather than an
 imperative state machine, and defines an additive `supported_workloads`
 capability list that starts with MaaS and accommodates future workload
-types (e.g., VMaaS) without schema migration. A single ACM Hub is active
-in this increment; the schema includes an immutable `source_hub_id` for
-future multi-hub compatibility.
+types (e.g., VMaaS) without schema migration. The current supported
+topology uses one OSAC Hub; `source_hub_id` references that existing Hub
+resource and the controller reuses its connection credentials. The schema
+includes an immutable `source_hub_id` for future multi-hub compatibility.
 
 ## 1.1 Terminology
 
@@ -54,7 +55,7 @@ future multi-hub compatibility.
 |------|------------|
 | **WorkloadCluster** | The provider-global OSAC resource introduced by this design, representing one registered physical cluster. |
 | **CPA** | Cloud Provider Admin — the OSAC role authorized to register and manage WorkloadClusters. |
-| **ACM Hub** | The Advanced Cluster Management for Kubernetes management plane that tracks ManagedClusters. |
+| **Hub (OSAC Hub)** | An existing OSAC `Hub` resource representing an OpenShift cluster with ACM running on it. The OSAC Hub is the same entity as the ACM Hub in this design — it is not a separate management plane. `source_hub_id` references this resource, and the controller reuses its connection credentials to observe ManagedCluster CRDs. |
 | **ManagedCluster** | An OCM custom resource on the Hub representing a cluster accepted into ACM management. |
 | **OCM** | Open Cluster Management — the CNCF project providing the `cluster.open-cluster-management.io/v1` CRD API consumed by the controller. |
 | **MaaS** | The OSAC managed AI workload placement service; the initial workload type for registered clusters. |
@@ -67,9 +68,9 @@ future multi-hub compatibility.
   global physical uniqueness enforced by `UNIQUE (source_hub_id,
   managed_cluster_name)` at the database layer, independent of the existing
   CaaS `Cluster` resource.
-- Include an immutable `source_hub_id` field in the spec validated against
-  the configured single Hub, with documented future multi-hub resolution
-  path.
+- Include an immutable `source_hub_id` field in the spec referencing an
+  existing OSAC Hub resource, validated against the single configured Hub
+  identity, with documented future multi-hub resolution path.
 - Continuously reflect Hub cluster state by consuming OCM
   `ManagedCluster` CRDs directly via list/watch on the Hub's Kubernetes
   API, with explicit trust, RBAC, version, and availability contracts
@@ -128,9 +129,12 @@ canonical shape that future provisioning modes can also target.
 
 The `WorkloadCluster` resource lives entirely within the
 fulfillment-service. No Kubernetes CRD is created on the OSAC operator
-or on the target cluster. The fulfillment controller validates and
-monitors the referenced `ManagedCluster` directly on the ACM Hub's
-Kubernetes API.
+or on the target cluster as part of registration; decisions about CRDs
+for deferred execution mechanisms (operator routing, AAP dispatch) belong
+to the follow-up that designs those mechanisms. The fulfillment
+controller validates and monitors the referenced `ManagedCluster`
+directly on the Hub's Kubernetes API, connecting through the existing
+OSAC Hub resource's credentials (see §4.5).
 
 **Components:**
 
@@ -140,8 +144,10 @@ Kubernetes API.
    to a future increment aligned with disconnect scope (see IC-4).
 2. **Fulfillment controller** — A reconciler in
    `fulfillment-service/internal/controllers/` that maintains a
-   SharedInformer (list/watch) on `managedclusters.cluster.open-cluster-management.io/v1`
-   on the Hub. On ManagedCluster events, it reconciles the corresponding
+   ManagedCluster watcher (list/watch) on
+   `managedclusters.cluster.open-cluster-management.io/v1` on the Hub,
+   using credentials resolved from the existing OSAC Hub resource (see
+   §4.5). On ManagedCluster events, it reconciles the corresponding
    WorkloadCluster's conditions.
 3. **PostgreSQL database** — Standard OSAC table with a global uniqueness
    constraint on `(source_hub_id, managed_cluster_name)`.
@@ -154,7 +160,7 @@ sequenceDiagram
     participant API as Fulfillment API
     participant DB as PostgreSQL
     participant Ctrl as Fulfillment Controller
-    participant Hub as ACM Hub K8s API
+    participant Hub as OSAC Hub K8s API
 
     CPA->>API: WorkloadClusters.Create(source_hub_id, managed_cluster_name, supported_workloads)
     API->>DB: Validate uniqueness, insert record
@@ -195,9 +201,12 @@ ensure timely initial reconciliation and resilience:
    readiness check** before consulting the informer cache:
 
    1. **Hub readiness gate.** The controller checks whether the Hub
-      client is authenticated and the SharedInformer has completed its
-      initial list-and-sync (i.e., `HasSynced()` returns true). If the
-      Hub client is not authenticated or the informer has not synced,
+      credential has been successfully resolved and the ManagedCluster
+      watcher has completed its initial list-and-sync (i.e.,
+      `HasSynced()` returns true). Authentication is established by a
+      successful list/watch, not merely by constructing a client. If
+      the Hub credential resolution fails, the list/watch has not
+      authenticated, or the informer has not synced,
       the controller sets `HubReachable=False` and `Available=False`
       with reason `HubUnreachable` on the newly created record. It
       must **not** consult the informer cache in this state — an
@@ -206,8 +215,9 @@ ensure timely initial reconciliation and resilience:
       have not been cached. This gate applies identically to newly
       created and existing records during any reconciliation path.
 
-   2. **Informer cache lookup (Hub ready only).** When the Hub client
-      is authenticated and the informer has synced, the controller
+   2. **Informer cache lookup (Hub ready only).** When the Hub
+      credential is resolved, the watcher has authenticated via a
+      successful list/watch, and the informer has synced, the controller
       looks up the referenced `managed_cluster_name` in the informer's
       current cache. If the ManagedCluster exists, the controller
       writes the appropriate conditions (`Available=True` or
@@ -226,19 +236,19 @@ ensure timely initial reconciliation and resilience:
 
 2. **Startup reconciliation.** On controller startup, the controller
    reconciles all existing WorkloadCluster records in the database.
-   The same Hub readiness gate applies: if the Hub client fails
-   authentication during startup (missing or invalid credential), all
-   existing records receive `HubReachable=False` and `Available=False`
-   with reason `HubUnreachable` before any informer cache lookup is
-   attempted. When the Hub client is authenticated and the
-   SharedInformer completes its initial list and cache sync, the
-   controller reconciles each record against the current informer
-   cache. When the credential is later corrected and the service
-   restarted, startup reconciliation runs again with a healthy Hub
-   client and synced informer, restoring accurate conditions for all
-   records. This recovers conditions after controller restarts and
-   corrects any stale condition state, including stale
-   `HubUnreachable` conditions from a prior credential outage.
+   The same Hub readiness gate applies: if Hub credential resolution
+   fails during startup (missing Hub resource or invalid credential),
+   all existing records receive `HubReachable=False` and
+   `Available=False` with reason `HubUnreachable` before any informer
+   cache lookup is attempted. When the credential is resolved and the
+   ManagedCluster watcher completes its initial list and cache sync,
+   the controller reconciles each record against the current informer
+   cache. When the credential is later corrected (Hub resource updated)
+   and the service restarted, startup reconciliation runs again with a
+   healthy credential and synced informer, restoring accurate
+   conditions for all records. This recovers conditions after
+   controller restarts and corrects any stale condition state, including
+   stale `HubUnreachable` conditions from a prior credential outage.
 
 3. **Retry after failed status writes.** If a condition write to
    PostgreSQL fails (transient database error, connection timeout), the
@@ -383,11 +393,13 @@ message WorkloadCluster {
 }
 
 message WorkloadClusterSpec {
-  // Identifier of the ACM Hub where the ManagedCluster is registered.
-  // Immutable after creation. Required.
-  // Validated against the fulfillment-service's configured Hub identity.
-  // Future increments may support multiple Hubs with dynamic routing;
-  // the schema supports this without migration.
+  // Identifier of the OSAC Hub resource whose cluster hosts the
+  // ManagedCluster CRD. Must reference an existing OSAC Hub. Immutable
+  // after creation. Required. Validated against the single configured
+  // Hub identity in this increment. The controller uses this Hub's
+  // connection credentials to observe ManagedCluster state. Future
+  // increments may support multiple Hubs; the schema supports this
+  // without migration via the existing OSAC Hub resource model.
   string source_hub_id = 1;
 
   // Name of the ManagedCluster resource on the Hub.
@@ -487,7 +499,7 @@ current observed state and updates declaratively as the situation changes.
 
 | Field | Rule | Error |
 |---|---|---|
-| `source_hub_id` | Non-empty; must match the configured Hub identity | `InvalidArgument` |
+| `source_hub_id` | Non-empty; must reference an existing OSAC Hub and match the single configured Hub identity | `InvalidArgument` |
 | `managed_cluster_name` | Non-empty; DNS label format (RFC 1123) | `InvalidArgument` |
 | `supported_workloads` | At least one value; all values in allow-list (`maas`) | `InvalidArgument` for empty or unknown values |
 | `source_hub_id` | Immutable after creation | `InvalidArgument` on update |
@@ -623,72 +635,133 @@ consume capacity indirectly through MaaS placement.
 
 **Input validation:**
 - `managed_cluster_name` validated as DNS label (RFC 1123).
-- `source_hub_id` validated against the configured Hub identity.
+- `source_hub_id` validated against the configured Hub identity (must
+  reference an existing OSAC Hub resource).
 - `supported_workloads` validated against the allow-list.
 - No user-supplied data is forwarded to the Hub API without validation.
 
 **Credential ownership and lifecycle:** The fulfillment controller
-authenticates to the Hub using a kubeconfig mounted from the
-`hub-kubeconfig` Secret in the fulfillment-service namespace.
+connects to the Hub using credentials from the existing OSAC Hub
+resource referenced by `source_hub_id`. The connection reuses the
+fulfillment-service's existing Hub credential resolution path.
 
-- **Provisioning:** The Secret is not created by the controller. The
-  OSAC Helm chart's `values.yaml` includes a
-  `fulfillment.hubKubeconfig.secretName` reference. The operator or
-  installer creates the Secret from an existing kubeconfig provided by
-  the CPA during installation or day-2 configuration. The controller
-  assumes the Secret exists and is valid at startup.
-- **Scope:** The credential grants read-only access (`get`, `list`,
-  `watch`) to `managedclusters` on the Hub — no write operations are
-  performed.
-- **Missing or invalid credential:** If the Secret is missing or its
-  contents fail authentication, the controller logs a redacted error at
-  startup (no credential content in the log) and sets both
-  `HubReachable=False` and `Available=False` (reason `HubUnreachable`)
-  on all existing WorkloadClusters. Stale `Available=True` conditions
-  must not persist when the controller cannot verify Hub state.
+- **Existing infrastructure (current OSAC source):** The
+  fulfillment-service already connects to Hubs for other resource
+  controllers (Cluster, ComputeInstance, networking, etc.). Each OSAC
+  Hub resource carries its credential as either inline kubeconfig bytes
+  (`HubSpec.kubeconfig`) or a reference to an OSAC Secret
+  (`HubSpec.kubeconfig_secret`). The existing `ResolveHubKubeconfig()`
+  helper resolves either path to kubeconfig bytes. The existing
+  `HubCache` provides a TTL-based (5-minute default) in-memory cache
+  that fetches the Hub resource, calls `ResolveHubKubeconfig()`, parses
+  the kubeconfig into a `rest.Config`, and returns a controller-runtime
+  `Client` with a `Namespace`. This cache is shared by all
+  fulfillment-service controllers.
+- **Proposed extension for ManagedCluster observation:** The existing
+  `HubCache` returns a controller-runtime `Client` and `Namespace`,
+  which serves existing controllers that perform CRUD on individual
+  OSAC CRDs. The WorkloadCluster controller additionally requires a
+  typed list/watch informer for `ManagedCluster` resources, which needs
+  a `rest.Config` rather than a pre-built `Client`. The proposed
+  implementation calls `ResolveHubKubeconfig()` (existing helper) to
+  obtain kubeconfig bytes, then uses `clientcmd.RESTConfigFromKubeConfig()`
+  (the same standard-library call `HubCache` uses internally) to build
+  a `rest.Config`, from which it constructs the ManagedCluster
+  informer. This shares the same Hub credentials used by all other
+  fulfillment-service controllers — no separate credential source,
+  Secret mount, or Helm configuration is introduced.
+- **Scope of observation permissions:** The ManagedCluster watcher
+  requires only read-only access (`get`, `list`, `watch`) to
+  `managedclusters` on the Hub — no write operations are performed by
+  this controller. The shared Hub credential itself is not globally
+  read-only; other existing OSAC controllers use the same credential to
+  write OSAC CRDs (ClusterOrders, ComputeInstances, etc.) to the Hub.
+  The observation permission constraint is specific to this controller's
+  usage, not a restriction on the Hub credential's overall scope. If
+  the Hub credential does not have ManagedCluster read permissions, the
+  RBAC configuration for the hub-access ServiceAccount on the Hub
+  cluster must be extended to include the
+  `managedclusters.cluster.open-cluster-management.io` resource.
+- **Missing or invalid credential:** If the Hub resource referenced by
+  `source_hub_id` does not exist, or its kubeconfig cannot be resolved
+  (missing OSAC Secret, invalid kubeconfig bytes), or the resolved
+  credential fails authentication (the initial list/watch returns
+  Unauthorized/Forbidden), the controller logs a redacted error (no
+  credential content in the log) and sets both `HubReachable=False`
+  and `Available=False` (reason `HubUnreachable`) on all
+  WorkloadClusters referencing that Hub. Stale `Available=True`
+  conditions must not persist when the controller cannot verify Hub
+  state. Authentication is established by a successful list/watch
+  response, not by successfully constructing a client object.
 - **Create during credential failure:** The Create RPC remains a local
   database registration operation — it succeeds whenever local
-  validation and uniqueness checks pass, regardless of Hub client
+  validation and uniqueness checks pass, regardless of Hub credential
   state. Create does not gate on Hub reachability because registration
   is a persistence operation, not a Hub operation. However,
   registration-triggered reconciliation (§4.1) applies the Hub
-  readiness gate: because the Hub client is not authenticated and the
-  informer has not synced, reconciliation sets `HubReachable=False`
-  and `Available=False` with reason `HubUnreachable` on the newly
-  created record. It must **not** consult the empty/unsynchronized
-  informer cache — doing so would falsely report
-  `ManagedClusterNotFound` for clusters that exist on the Hub but
-  have not been cached. This ensures the CPA sees an honest
-  `HubUnreachable` condition, not a misleading `NotFound`.
-- **Recovery after credential fix:** When the credential is corrected
-  and the fulfillment-service is restarted, the controller
-  re-establishes the Hub watch and startup reconciliation (§4.1)
-  refreshes all conditions — both pre-existing records and records
-  created during the outage. Clusters whose ManagedClusters are
-  healthy transition from `HubUnreachable` to `Available=True`
-  automatically. Records whose `managed_cluster_name` does not match any
-  ManagedCluster transition to `Available=False` with the accurate
-  reason `ManagedClusterNotFound` (now trustworthy because the
-  informer cache is synchronized).
-- **Rotation:** Credential rotation requires updating the Secret
-  contents and restarting the fulfillment-service pod (or pods, if
-  scaled) to pick up the new credential. The controller does not
-  watch the Secret for changes. Operational documentation must include
-  the rotation procedure (update Secret, rollout restart). During the
-  restart window, the Hub watch is temporarily interrupted; both
-  `HubReachable=False` and `Available=False` are set until the new
-  credential establishes a connection and startup reconciliation
-  refreshes conditions.
-- **Zeroization:** The kubeconfig is mounted as a read-only volume.
-  The controller reads it into memory at startup to initialize the Hub
-  client. The in-memory client object holds the credential for the
-  process lifetime. On pod termination, the container's memory is
-  reclaimed by the container runtime. No additional zeroization is
-  performed beyond standard container lifecycle cleanup.
+  readiness gate: because the credential has not successfully
+  authenticated and the informer has not synced, reconciliation sets
+  `HubReachable=False` and `Available=False` with reason
+  `HubUnreachable` on the newly created record. It must **not**
+  consult the empty/unsynchronized informer cache — doing so would
+  falsely report `ManagedClusterNotFound` for clusters that exist on
+  the Hub but have not been cached. This ensures the CPA sees an
+  honest `HubUnreachable` condition, not a misleading `NotFound`.
+- **Recovery after credential fix:** When the Hub resource's credential
+  is corrected (kubeconfig updated inline or the referenced OSAC Secret
+  updated), the controller detects the change during its periodic
+  re-validation cycle (§4.6) by re-resolving the Hub kubeconfig via
+  `ResolveHubKubeconfig()`. If the resolved credential differs from
+  the one the current watcher is using, the controller tears down the
+  existing ManagedCluster watcher and constructs a new one with the
+  fresh credential. On successful re-authentication (initial list/watch
+  succeeds), startup-equivalent reconciliation refreshes all conditions
+  — both pre-existing records and records created during the outage.
+  Clusters whose ManagedClusters are healthy transition from
+  `HubUnreachable` to `Available=True` automatically. Records whose
+  `managed_cluster_name` does not match any ManagedCluster transition
+  to `Available=False` with the accurate reason
+  `ManagedClusterNotFound` (now trustworthy because the informer cache
+  is synchronized). A service restart also triggers recovery via
+  startup reconciliation (§4.1). The periodic re-resolution is proposed
+  new controller behavior; the existing `HubCache` TTL-based refresh
+  serves other controllers but does not automatically reconfigure an
+  already-running informer.
+- **Rotation:** Credential rotation is performed by updating the Hub
+  resource's credential (either updating the inline kubeconfig or
+  updating the referenced OSAC Secret's data). The controller's
+  periodic re-validation cycle (§4.6) detects the changed credential
+  within the re-validation interval and rebuilds the ManagedCluster
+  watcher with the new credential. Alternatively, a
+  fulfillment-service pod restart triggers immediate recovery via
+  startup reconciliation. Operational documentation must include the
+  rotation procedure. During the re-resolution window, if the old
+  credential has already been revoked, the watcher loses its
+  connection; both `HubReachable=False` and `Available=False` are set
+  until the new credential re-establishes a successful list/watch.
+- **Hub resource deletion:** If the OSAC Hub resource referenced by
+  `source_hub_id` is deleted, credential resolution fails permanently
+  (the Hub is not found). The controller sets `HubReachable=False` and
+  `Available=False` (reason `HubUnreachable`) on all WorkloadClusters
+  referencing that Hub. This is a permanent condition until the Hub
+  resource is re-created with the same ID, which is not a standard
+  operation. WorkloadCluster records referencing a deleted Hub remain
+  in the database as inert registrations.
+- **Zeroization:** The controller resolves the kubeconfig into memory
+  to construct the ManagedCluster watcher's `rest.Config`. The
+  in-memory credential is held for the watcher's lifetime and replaced
+  when the watcher is rebuilt during credential re-resolution. On pod
+  termination, the container's memory is reclaimed by the container
+  runtime. No additional zeroization is performed beyond standard
+  container lifecycle cleanup.
 - **Post-quantum cryptography:** Post-quantum TLS or credential
   protection for the Hub connection is out of scope for this increment.
   The connection uses the standard TLS configuration of the Kubernetes
   client library.
+- **No kubeconfig in WorkloadCluster records:** The WorkloadCluster
+  database table does not store kubeconfigs or credentials. All Hub
+  connection state is derived at runtime from the referenced OSAC Hub
+  resource.
 
 **Failure message exposure:** Condition `reason` and `message` fields
 use only predefined reason codes and generic cause descriptions (see
@@ -733,8 +806,8 @@ automatic when the underlying situation resolves.
 | ManagedCluster not found on Hub | `Available=False`, reason `ManagedClusterNotFound` | Automatic: when ManagedCluster is created on Hub, watch event or registration-triggered lookup updates conditions | Condition message: "Referenced managed cluster not found on the hub" |
 | ManagedCluster not accepted by Hub | `Available=False`, reason `ManagedClusterNotAccepted` | Automatic: when Hub accepts the ManagedCluster, watch event triggers update | Condition message: "Referenced managed cluster exists but is not accepted by the hub" |
 | ManagedCluster unavailable on Hub | `Available=False`, reason `ManagedClusterUnavailable` | Automatic: when `ManagedClusterConditionAvailable` becomes True, watch event triggers update | Condition message: "Referenced managed cluster is accepted but not available" |
-| Hub API unreachable | `Available=False`, `HubReachable=False`, reason `HubUnreachable` | Automatic: watch reconnects when Hub recovers; conditions update on reconnection | Condition message: "Cannot reach hub to validate cluster registration" |
-| Create during Hub credential failure | Create RPC succeeds (local validation/uniqueness only). Registration-triggered reconciliation applies Hub readiness gate: `Available=False`, `HubReachable=False`, reason `HubUnreachable`. Informer cache is **not** consulted — `ManagedClusterNotFound` is never reported in this state. | After credential fix and restart, startup reconciliation restores accurate conditions via synced informer cache | Create returns WorkloadCluster with conditions `Unknown`; reconciliation quickly sets `HubUnreachable`. After recovery, conditions reflect actual ManagedCluster state. |
+| Hub API unreachable | `Available=False`, `HubReachable=False`, reason `HubUnreachable` | Automatic: watch reconnects when Hub recovers; credential re-resolution on periodic re-validation rebuilds watcher if credential changed; conditions update on reconnection | Condition message: "Cannot reach hub to validate cluster registration" |
+| Create during Hub credential failure | Create RPC succeeds (local validation/uniqueness only). Registration-triggered reconciliation applies Hub readiness gate: `Available=False`, `HubReachable=False`, reason `HubUnreachable`. Informer cache is **not** consulted — `ManagedClusterNotFound` is never reported in this state. | After credential fix on the Hub resource, periodic re-validation detects the change, rebuilds the watcher, and restores accurate conditions. Restart also recovers via startup reconciliation. | Create returns WorkloadCluster with conditions `Unknown`; reconciliation quickly sets `HubUnreachable`. After recovery, conditions reflect actual ManagedCluster state. |
 | Hub recovers after outage | `HubReachable=True`; `Available` updated based on ManagedCluster state | Automatic via watch reconnect | Conditions reflect current state |
 | ManagedCluster removed from Hub after registration | `Available=False`, reason `ManagedClusterNotFound` | Automatic: when ManagedCluster is re-created on Hub, watch event triggers condition update to `Available=True` | Condition message: "Referenced managed cluster not found on the hub" |
 | Cluster identity mismatch (UID changed) | `Available=False`, reason `ClusterIdentityMismatch` | Self-service replacement is blocked in this increment (uniqueness constraint + deferred Delete). Platform operator can soft-delete the record to release the uniqueness slot; CPA then re-registers. See §4.2 recovery path. | Condition message: "Cluster identity changed; administrative action required" |
@@ -759,7 +832,10 @@ when the condition's status or reason actually changes) and
 periodic re-validation). The controller periodically (every 5 minutes)
 re-validates all WorkloadCluster conditions against the informer cache
 and updates `last_observed_time` on confirmation, whether or not the
-status changed. `last_transition_time` changes only on actual status or
+status changed. This same periodic re-validation cycle drives Hub
+credential re-resolution: the controller re-resolves the Hub kubeconfig
+via `ResolveHubKubeconfig()` and rebuilds the ManagedCluster watcher if
+the credential has changed (see §4.5 Recovery and Rotation). `last_transition_time` changes only on actual status or
 reason transitions, preserving Kubernetes condition semantics. Consumers
 that require freshness guarantees (e.g., placement queries) should
 compare `last_observed_time` against a staleness threshold (recommended:
@@ -813,26 +889,37 @@ schema change, or proto field addition is required. A single cluster can
 support both `["maas", "vmaas"]` simultaneously — capabilities are
 additive, not exclusive.
 
-**Multi-hub support:** The `source_hub_id` field in the spec uniquely
-identifies the Hub. In this increment, the fulfillment controller
-validates it against the single configured Hub identity and uses the
-single Hub connection. A future multi-hub increment would:
-1. Introduce a Hub registry mapping `source_hub_id` to connection
-   configuration.
-2. Route controller reconciliation to the appropriate Hub connection
-   based on `source_hub_id`.
+**Multi-hub support:** The `source_hub_id` field in the spec references
+an existing OSAC Hub resource. OSAC's Hub resource model already supports
+multiple Hub resources, each with its own credential — the Hub table
+naturally serves as a connection registry. In this increment, the
+fulfillment controller validates `source_hub_id` against the single
+configured Hub identity and constructs one ManagedCluster watcher. A
+future multi-hub increment would:
+1. Remove the single-Hub validation constraint, allowing `source_hub_id`
+   to reference any existing OSAC Hub resource.
+2. Construct per-Hub ManagedCluster watchers, routing controller
+   reconciliation to the appropriate Hub connection based on
+   `source_hub_id`.
 3. No WorkloadCluster schema migration — `source_hub_id` is already
-   part of the uniqueness constraint.
+   part of the uniqueness constraint and references the same OSAC Hub
+   resource model.
 
-The design does not implement dynamic Hub resolution; it documents the
-schema readiness for it.
+The design does not implement multi-Hub routing; it documents the schema
+and identity readiness for it. The multi-hub increment would be a
+separate design, not an automatic consequence of the existing Hubs API
+supporting multiple records.
 
 **CaaS automatic registration:** Future CaaS provisioning can create
-WorkloadClusters automatically after cluster provisioning completes. The
-WorkloadCluster shape is the same regardless of whether registration is
-manual (CPA-driven) or automatic (CaaS-driven). A CaaS integration would
-call `WorkloadClusters.Create` internally after the provisioned cluster
-is registered on the Hub.
+WorkloadClusters automatically after cluster provisioning completes,
+provided the provisioned cluster is registered as a ManagedCluster on
+the OSAC Hub and observable via ACM. The WorkloadCluster shape is the
+same regardless of whether registration is manual (CPA-driven) or
+automatic (CaaS-driven). A CaaS integration would call
+`WorkloadClusters.Create` internally after the provisioned cluster
+satisfies the ManagedCluster registration prerequisite. This reuses the
+Hub connection path; it does not by itself prove full CaaS end-to-end
+compatibility or guarantee zero-migration convergence.
 
 **OCM adapter extraction:** The direct OCM CRD consumption described in
 §4.1 is the current approach. If an anti-corruption adapter becomes
@@ -1176,7 +1263,7 @@ hygiene action with no impact on this design.
 | U15 | Registration-triggered reconciliation for existing ManagedCluster | FR-2 | Conditions transition from Unknown immediately after Create |
 | U16 | Registration-triggered reconciliation for missing ManagedCluster (Hub client ready, informer synced) | FR-4 | Available=False with ManagedClusterNotFound after Create |
 | U17 | ManagedCluster exists but ManagedClusterConditionAvailable=False | FR-4 | Available=False with ManagedClusterUnavailable |
-| U18 | Registration-triggered reconciliation when Hub client not authenticated (credential failure) | FR-4 | Hub readiness gate prevents informer cache lookup; sets HubReachable=False and Available=False with HubUnreachable — never ManagedClusterNotFound |
+| U18 | Registration-triggered reconciliation when Hub credential resolution fails or list/watch authentication fails | FR-4 | Hub readiness gate prevents informer cache lookup; sets HubReachable=False and Available=False with HubUnreachable — never ManagedClusterNotFound |
 
 ## 10.3 Integration Tests
 
@@ -1200,7 +1287,7 @@ hygiene action with no impact on this design.
 | I14 | Retry after failed status write | FR-4 | Condition write retried; eventually succeeds |
 | I15 | ManagedCluster accepted but ManagedClusterConditionAvailable=False | FR-4 | Available=False, reason ManagedClusterUnavailable |
 | I16 | Freshness re-validation updates last_observed_time without changing last_transition_time | — | last_observed_time updated within re-validation interval; last_transition_time unchanged when status/reason did not transition |
-| I17 | Create during Hub credential failure, then recovery | FR-4 | Create RPC succeeds; registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable), not ManagedClusterNotFound. After credential fix and restart, startup reconciliation restores accurate conditions (Available=True for existing ManagedClusters) |
+| I17 | Create during Hub credential failure, then recovery | FR-4 | Create RPC succeeds; registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable), not ManagedClusterNotFound. After credential fix on Hub resource, periodic re-validation or restart restores accurate conditions (Available=True for existing ManagedClusters) |
 
 ## 10.4 API Tests
 
@@ -1256,10 +1343,10 @@ hygiene action with no impact on this design.
 
 | # | Scenario | Requirement | Expected Behavior |
 |---|---|---|---|
-| K1 | hub-kubeconfig Secret present and valid | — | Controller starts, watch established |
-| K2 | hub-kubeconfig Secret missing | — | Controller logs error, HubReachable=False and Available=False (reason HubUnreachable) on all clusters; recovery after credential fix and restart restores conditions via startup reconciliation |
-| K3 | hub-kubeconfig Secret with invalid credentials | — | HubReachable=False and Available=False (reason HubUnreachable) on all clusters; condition message describes auth failure without exposing credentials |
-| K4 | Create WorkloadCluster while Hub credential is invalid, then fix credential and restart | FR-4 | Create RPC succeeds (local validation only). Registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable) — informer cache not consulted, ManagedClusterNotFound never reported. After credential fix and restart, startup reconciliation transitions to accurate conditions (Available=True if ManagedCluster exists and is healthy) |
+| K1 | Hub resource present with valid kubeconfig | — | Controller resolves credential via ResolveHubKubeconfig, watch established |
+| K2 | Hub resource missing or kubeconfig unresolvable | — | Controller logs error, HubReachable=False and Available=False (reason HubUnreachable) on all clusters; recovery after credential fix on Hub resource and periodic re-validation or restart restores conditions |
+| K3 | Hub resource present with invalid credentials (list/watch fails authentication) | — | HubReachable=False and Available=False (reason HubUnreachable) on all clusters; condition message describes auth failure without exposing credentials |
+| K4 | Create WorkloadCluster while Hub credential is invalid, then fix credential | FR-4 | Create RPC succeeds (local validation only). Registration-triggered reconciliation sets HubReachable=False and Available=False (HubUnreachable) — informer cache not consulted, ManagedClusterNotFound never reported. After credential fix on Hub resource, periodic re-validation or restart transitions to accurate conditions (Available=True if ManagedCluster exists and is healthy) |
 
 ## 10.10 Direct OCM Compatibility Tests
 
@@ -1312,7 +1399,7 @@ real vs. simulated dependencies, and follow-up gaps.
 | fulfillment-service | DB uniqueness constraint under concurrency | Component integration | [DEV] | I9 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub mocked | — |
 | fulfillment-service | Placement filter query (List with CEL) | Component integration | [DEV] | I10 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub mocked; no actual Praxis consumer | Actual Praxis placement consumer and tenant-to-cluster assignment: deferred to future cross-workload design |
 | fulfillment-service | OPA authorization (CPA-only) | Component integration | [DEV] | S1–S7 / `fulfillment-service/it/` | Same as above | PostgreSQL, OPA policy (testcontainer or embedded) | Hub mocked | — |
-| fulfillment-service | Credential lifecycle (missing/invalid Secret, Create during outage) | Component integration | [DEV] | K1–K4, I17 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub client configured with invalid credentials or missing mount | Real Secret mount behavior tested in E2E. K4 verifies Hub readiness gate prevents ManagedClusterNotFound during credential outage. I17 verifies end-to-end Create-during-outage and recovery via startup reconciliation |
+| fulfillment-service | Credential lifecycle (missing/invalid Hub resource, Create during outage, credential re-resolution) | Component integration | [DEV] | K1–K4, I17 / `fulfillment-service/it/` | Same as above | PostgreSQL (testcontainer) | Hub resource with invalid credentials or missing kubeconfig | Hub credential resolution via ResolveHubKubeconfig tested with mock Hub resource. K4 verifies Hub readiness gate prevents ManagedClusterNotFound during credential outage. I17 verifies end-to-end Create-during-outage and recovery via credential re-resolution or startup reconciliation |
 | fulfillment-service | Logging redaction | Unit + component integration | [DEV] | L1–L3 / `fulfillment-service/internal/` + `it/` | `make -C fulfillment-service test-unit test-integration` | None (unit); PostgreSQL (integration) | Hub mocked | — |
 | fulfillment-service | Freshness re-validation and staleness | Component integration | [DEV] | I16 / `fulfillment-service/it/` | Same as integration command | PostgreSQL (testcontainer) | Hub mocked; clock stubbed for staleness window | Staleness threshold interaction with Praxis: deferred to follow-up |
 | tests/e2e | Register, verify, CPA-only access, duplicate detection | E2E | [QE] | E1–E8 / `tests/e2e/` (pytest via osac-test-infra) | `pytest tests/e2e/test_workload_cluster.py` (proposed; requires deployed OSAC + live ACM Hub) | Deployed OSAC stack, PostgreSQL, live ACM Hub with ManagedCluster | None — all dependencies real | ACM Hub availability in CI: unresolved — requires dedicated test Hub or integration with existing ACM test environment. No existing test Hub is provisioned in CI. |
@@ -1417,8 +1504,12 @@ is handled via API versioning (the `v1` API is additive-only).
 - Clusters created during a credential outage show `HubUnreachable`:
   this is expected — the Hub readiness gate prevents misleading
   `ManagedClusterNotFound` when the informer cache is not synchronized.
-  Fix the credential, restart the fulfillment-service, and startup
-  reconciliation restores accurate conditions automatically.
+  Fix the credential on the OSAC Hub resource (update inline kubeconfig
+  or referenced OSAC Secret). The controller's periodic re-validation
+  cycle detects the change, rebuilds the ManagedCluster watcher, and
+  restores accurate conditions automatically. Alternatively, restart
+  the fulfillment-service for immediate recovery via startup
+  reconciliation.
 - Hub watch errors increasing: check
   `osac_workload_cluster_hub_watch_errors_total`. May indicate Hub
   credential rotation needed or network issue.
@@ -1503,9 +1594,9 @@ implemented (see IC-4).
   simpler time-unbounded design would be operationally simpler but risks
   stale placement.
 
-- **Single Hub limits scale.** The single configured Hub connection
-  limits this increment to one Hub's managed clusters. Multi-hub
-  environments require the deferred multi-hub routing.
+- **Single Hub limits scale.** The single configured Hub validation
+  limits this increment to one OSAC Hub's managed clusters. Multi-hub
+  environments require a deferred multi-hub design increment.
 
 # 17. Risks and Mitigations
 
@@ -1514,7 +1605,7 @@ implemented (see IC-4).
 | Hub cluster removed while OSAC workloads are active | `Available=False` with reason `ManagedClusterNotFound` signals MaaS placement to stop scheduling new workloads. Existing workload handling is a MaaS concern. |
 | ACM API version changes break Hub watch | The `cluster.open-cluster-management.io/v1` ManagedCluster API is GA and stable. Client pins the API version. Extraction triggers documented in §4.1. |
 | SharedInformer memory for large Hub | Scales linearly with ManagedCluster count. Acceptable for expected scale (~500 clusters). Monitor and evaluate if scale exceeds assumptions. |
-| Hub credential rotation | hub-kubeconfig Secret update requires fulfillment-service pod restart (rollout restart) to pick up new credentials. Rotation procedure documented in §4.5. During restart window, both HubReachable=False and Available=False are set (§4.5); startup reconciliation restores conditions when the new credential establishes a connection. |
+| Hub credential rotation | Update the Hub resource's credential (inline kubeconfig or referenced OSAC Secret). The controller's periodic re-validation cycle (§4.6) detects the change and rebuilds the ManagedCluster watcher. If the old credential is revoked before the new one takes effect, both HubReachable=False and Available=False are set until re-resolution succeeds. Rotation procedure documented in §4.5. A pod restart provides immediate recovery as a fallback. |
 
 ---
 
@@ -1527,7 +1618,8 @@ Reviewed: respond @ design/OSAC-6488 — five CodeRabbit consistency findings: U
 Reviewed: respond @ design/OSAC-6488 — CodeRabbit finding: Create behavior during Hub credential failure. Defined Hub readiness/authentication gate in registration-triggered reconciliation (§4.1), credential lifecycle (§4.5), failure table (§4.6), support procedures (§14). Added tests U24, I17, K4, F6. Qualified U22/I12 to Hub-ready state. Asynchronous registration baseline preserved: Create remains a local persistence operation; Hub readiness gate is a reconciliation concern, not a Create gate.
 Reviewed: independent review @ design/OSAC-6488 — credential-outage revision: verified Hub readiness gate coherence (no invented API; HasSynced is real, authentication is controller-owned state). Fixed startup reconciliation §4.1 sequencing contradiction (opening clause assumed informer sync before describing auth-failure path). Reordered I17 to sequential position after I16. Added I17 to evidence-matrix credential-lifecycle row and mocked-Hub limitation range (I1–I17). All baselines and prior corrections preserved.
 Reviewed: respond @ design/OSAC-6488 — five mhrivnak review corrections: (1) renamed hub_cluster_name→managed_cluster_name everywhere (proto, SQL index, uniqueness, API/CLI/UI, logs, tests, prose); (2) rewrote Motivation to focus on OSAC tracking workload-placement clusters with brief CaaS background note; (3) removed allowed_tenants field and all tenant-specific assignment/filtering — deferred to future cross-workload design; (4) removed ManagedClusterRemoved reason — all absence cases use ManagedClusterNotFound for declarative current-state semantics; (5) removed placement algorithm and entitlement tests — deferred dedicated/shared tenant infrastructure and placement/isolation policy. Preserved provider-global CPA-only management, source_hub_id, supported_workloads, direct OCM consumption, asynchronous reconciliation, credential handling, and all other accepted contracts. Aligned with PR #405 shared-provider-capacity direction.
-Phases: draft, revise, revise, respond, respond, respond, respond, respond, respond, respond
-Sources: PRD (prd.md), PR #394 review feedback (eranco74 trusted corrections, CodeRabbit inline findings, mhrivnak trusted corrections), baselined architectural decisions, INTEGRATION-TESTING.md planning evidence requirements, OSAC source storage shape verification, PR #405 shared-provider-capacity direction
+Reviewed: respond @ design/OSAC-6488 — ygalblum review corrections: established OSAC Hub = ACM Hub identity throughout (§1.1 terminology, §4.3 proto, §4.5 credential lifecycle); replaced invented hub-kubeconfig Secret mount with existing OSAC Hub resource credential path (HubSpec.kubeconfig/kubeconfig_secret via ResolveHubKubeconfig); proposed ManagedCluster watcher construction from resolved kubeconfig bytes as new controller behavior (existing HubCache returns Client/Namespace, not RESTConfig usable for typed informer); defined credential re-resolution on periodic re-validation cycle with watcher rebuild (§4.5 Recovery, §4.6 Freshness); distinguished existing helper behavior from proposed new controller behavior; preserved single-Hub validation, U7 second-Hub rejection, read-only ManagedCluster observation, Hub credential shared scope, no kubeconfigs in WorkloadCluster records, registration-only scope, deferred placement/execution/tenant assignment, honest CaaS prerequisite.
+Phases: draft, revise, revise, respond, respond, respond, respond, respond, respond, respond, respond
+Sources: PRD (prd.md), PR #394 review feedback (eranco74 trusted corrections, CodeRabbit inline findings, mhrivnak trusted corrections, ygalblum Hub identity review), baselined architectural decisions, INTEGRATION-TESTING.md planning evidence requirements, OSAC source verification (HubSpec proto, HubCache, ResolveHubKubeconfig, HubClientProvider), PR #405 shared-provider-capacity direction
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"432d6b0","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond","respond","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.9.0","ai_workflows":"155e7d6","source_repo":"27ef613","source_repo_branch":"design/OSAC-6488","commits_behind_main":0,"commits_ahead_main":2,"main_ref":"main","phases":["draft","revise","revise","respond","respond","respond","respond","respond","respond","respond","respond"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
