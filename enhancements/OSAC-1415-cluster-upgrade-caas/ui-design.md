@@ -3,14 +3,14 @@ title: cluster-upgrade-caas-ui
 authors:
   - elayaha@gmail.com
 creation-date: 2026-10-13
-last-updated: 2026-10-22
+last-updated: 2026-10-25
 tracking-link:
   - https://redhat.atlassian.net/browse/OSAC-1415
 prd:
   - "prd.md"
 see-also:
   - "design.md"
-  - "design-phase1.md"
+  - "https://github.com/osac-project/enhancement-proposals/pull/413"
 replaces:
   - "N/A"
 superseded-by:
@@ -21,51 +21,47 @@ superseded-by:
 
 ## Summary
 
-Tenant Users and Tenant Admins choose one target OpenShift version for a cluster from the list or detail page. OSAC upgrades the control plane first, then automatically upgrades every node set (HyperShift node pool) to that version. The UI offers no independent component upgrade action. See the [PRD](prd.md), [Phase 1 contract](design-phase1.md), and [phase plan](design.md).
+Tenant Users and Tenant Admins choose one direct OpenShift X→Y target from cluster details. One `Clusters.Update` changes `spec.version`; the [UX design](https://github.com/osac-project/enhancement-proposals/pull/413) presents the control plane and all node sets upgrading together, with add-on operator versions unchanged. The backend sequence still needs agreement (below).
 
-## What the user sees
+## Entry and versions
 
-An **Upgrades** card on **Overview** shows the current or latest cluster upgrade, its control-plane and node-set stages, and earlier history: source and target versions, state, message, and timing. Control-plane success is an intermediate stage; the cluster upgrade completes only after every node set reaches the target. Upgrade progress stays separate from cluster provisioning status.
+- The details **Cluster version** rail shows **Current** from `status.observed_cp_version` (`—` when absent), **Upgrade available** when eligible, and an **Upgrade cluster** link. After acceptance, **Desired** resolves `spec.version` to its semver. The UX mock's pre-request suggested Desired value needs a selection rule; it is not the stored desired version.
+- **Upgrade history** opens a modal from the rail; omit the link when history is empty. Keep existing header actions. Remove the planned upgrade action from the header and cluster-row menu; add no Upgrades tab or Overview card.
+- The Clusters table and configuration card show observed **Current version**, with lifecycle badges matched to that version. The Node sets table adds one observed **Current version** column (`—` when absent). During an upgrade, the rail and affected rows label their observed→target transition; add no desired-version column.
 
-The existing **Version** column in the Clusters table becomes **Current version** and reads `Cluster.status.observed_cp_version` (or `—` until observed); the configuration card uses the same value. The list and card lifecycle badges describe that observed version, or are hidden when no catalog entry matches. The **Node sets** table adds one **Current version** column from `Cluster.status.node_sets[name].observed_version` (or `—` until observed).
+## Upgrade dialog
 
-During the control-plane stage, show **Upgrade in progress from {current version} to {target version}** beside its observed version. While node sets follow, keep a cluster-level **Upgrading node sets to {target version}** indicator and show the from-to label beside each node set being upgraded. A TimedOut stage has no active label; the card still shows its recorded outcome.
+**Upgrade cluster** opens a compact modal with read-only Current version and one required **Target version** selector. Offer enabled ACTIVE/DEPRECATED catalog versions newer than the observed version, subject to the agreed simultaneous-upgrade admission rules; the API makes the final decision. Explain blocked actions or confirmation when observations, admission, or targets are unavailable, or cluster state is `FAILED`, `DELETING`, or `DELETE_FAILED`. `PROGRESSING` alone does not block an admitted upgrade.
 
-## Starting an upgrade
+The modal says control plane and node sets upgrade together, shows approved typical-duration and “included in this version” copy when supplied, and warns that an accepted upgrade cannot be cancelled or rolled back. It has no component picker, node-set version list, or multi-hop builder. Link the external [OpenShift Update Graph](https://access.redhat.com/labs/ocpupgradegraph/update_path/) for the tenant's path/risk check; OSAC does not verify it. **Cancel** dismisses before submission. **Upgrade cluster** changes and masks only `spec.version`; it sends no node-set, operator, or status update. Keep the selection and show API errors inline without automatic retry.
 
-**Upgrade version** in the details header and each cluster row's **Actions** menu opens the same dialog. It shows only the cluster's observed **Current version** and one **New version** selector. An information note explains that the control plane upgrades first, then all node sets upgrade automatically. There is no component selector or node-set version list. Targets come from enabled ACTIVE or DEPRECATED `ClusterVersion` entries. Compare semver values, not catalog names: a target must be newer than the observed control plane and keep every node set within three minor versions during the control-plane stage.
+## Progress and history
 
-Disable **Upgrade version** with a reason at either entry point when `CanUpgrade` is not true or the cluster is `FAILED`, `DELETING`, or `DELETE_FAILED`. In the dialog, disable confirmation with a reason when an observed baseline or eligible target is unavailable. A `PROGRESSING` cluster can upgrade when `CanUpgrade=True`. The API makes the final admission decision.
+After acceptance, show an **Upgrade progress** card above the detail content. Its PatternFly `ProgressStepper` shows control-plane, node-set, and finalizing status for the same attempt without implying a required sequence; control plane and node sets may both be active. The rail says **Upgrading** and affected node sets say **Updating**. Keep this separate from provisioning status. Show remaining time only from an approved source.
 
-Before confirmation, summarize the cluster's current → target version and reiterate that node sets upgrade automatically after the control plane; state that Phase 1 cannot cancel an accepted upgrade. Tell the tenant they **must check the current-to-target path and risks** in the external [OpenShift Update Graph](https://access.redhat.com/labs/ocpupgradegraph/update_path/). Phase 1 does not perform or verify that check.
+The **Upgrade history** modal shows one row per cluster request: Version (X→Y), State, Started, Completed, and View release notes, with failure/timeout messages available. Include the current attempt; steady clusters show no progress card. On `TimedOut`, replace the active stepper with a warning and retain the row. Observed versions keep refreshing; do not infer success from late convergence. Admission controls the next upgrade. Do not group component entries into cluster attempts in the browser.
 
-## Request and progress
+## UI implementation
 
-Use the `Cluster` from the existing list or details query. Submit one `Clusters.Update` through `useUpdateResource(Clusters)` with its `id` and the selected `ClusterVersionReference`, changing and masking only `spec.version`. The UI does not update `spec.node_sets` or send a request per node set. The backend coordinates the control-plane stage followed by the node-set stages.
+On the existing `/clusters/:clusterId` route, `ClusterDetailsPageContent` composes new `ClusterVersionRail({ cluster, onUpgrade, onHistory })`, `UpgradeClusterDialog({ cluster, onClose })`, `ClusterUpgradeProgress({ cluster })`, and `ClusterUpgradeHistoryModal({ cluster, onClose })` under `components/Cluster/Details/`. It owns modal visibility; the dialog owns target selection. Keep existing conditions/networking content. Update `ClusterConfigurationCard`, `ClustersTable`, and `ClusterNodeSetsTab` for observed versions. No new route or global state is needed.
 
-Do not send status or a release image. Show API rejections without retrying automatically.
+Reuse `useCluster`/`useClusters` and `useClusterVersions` with project scoping and `CLUSTER_VERSION_ACTIVE_LIST_FILTER`. Use `useUpdateResource(Clusters)` and also invalidate legacy `v1/clusters` query keys; its generic invalidation does not refresh the current cluster hooks. Existing 10-second polling refreshes progress. Use PatternFly modal focus handling, a labeled selector, accessible disabled reasons, and announced request errors.
 
-After acceptance, link from the cluster list to its Overview card for monitoring. Generic query invalidation and the app's default polling keep the list and details current, including after TimedOut. Show TimedOut as the recorded attempt outcome; observed versions may still advance if HyperShift converges. Use `CanUpgrade`, not the history outcome, to decide whether another upgrade is available. [Source: feature-owner review of the Phase 1 status model]
+## Contract work before implementation
 
-## Implementation and later phases
+- The [PRD](prd.md) and [backend design](design.md), including open [PR #412](https://github.com/osac-project/enhancement-proposals/pull/412), specify **control plane first**; current Fulfillment also accepts only one component version change per edit. Agree on simultaneous execution, HCP version ceiling/skew rules, and unchanged add-on operators before building the UX. Do not reuse the old control-plane-first N-3 filter.
+- The public API has per-component `status.upgrade_history`, not a cluster-attempt summary, aggregate state, or finalizing/ETA signal. Define these, `TimedOut`/partial outcomes, and the planned `CanUpgrade` admission signal. The selected UI generated types also lack the newer observed/history fields.
+- Define the pre-request Desired suggestion and sources for duration, version-offer copy, and release-notes URLs. `ClusterVersion` exposes none of the last three; show them only from approved data.
 
-Add a `ClusterUpgradeCard` to `ClusterOverviewTab`; show observed versions and stage labels in `ClustersTable`, `ClusterConfigurationCard`, and the Node sets table. Resolve lifecycle badges against the observed control-plane version. Open one `UpgradeClusterDialog` from `ClusterDetailsActionButtons` and `ClusterActionsMenu`; use the current `Cluster` for the version summary and warning, and keep the table menu available to show disabled reasons.
+## Verification
 
-Migrate cluster and version reads to `useGetResource`/`useListResource`, preserving project scoping and `CLUSTER_VERSION_ACTIVE_LIST_FILTER`. Use `useUpdateResource(Clusters)` and its matching cache invalidation instead of adding `useUpdateCluster`; use one semver/skew helper for cluster target filtering and disabled reasons.
-
-The published PRD and Phase 1 design still specify independent component requests. Their backend contract must be aligned so one `spec.version` change drives the full sequence and status identifies its stages and overall completion. The UI must not infer completion from control-plane success alone. The backend design must also address clusters with a node set already three minor versions behind: a control-plane-first move to the next minor would exceed the skew limit.
-
-Unit tests cover both action locations, target filtering across all node sets, the cluster-only version dialog and sequencing note, the warning, the `spec.version`-only request, errors and cache invalidation, observed versions, stage labels, history, and a later observed-version change after TimedOut; the [Phase 1 test plan](testplan-phase1.md) tracks deployed coverage.
-
-Phase 2 adds graph-based choices and risk acknowledgment. Phase 3+ adds pending cancellation and version-attention views.
+Vitest/Testing Library with mocked Connect transport covers rail eligibility, dialog/request/error behavior, observed versions, concurrent progress, empty/current/past history, timeout followed by late convergence, and keyboard/focus behavior. Backend contract tests must prove one request reaches every component and reports an aggregate result.
 
 ---
 
 ## Provenance
 
-Authored: draft @ design 0.11.5 - 1c6e8de, workspace main @ f51d7c726
-Final: revise @ design 0.11.5 - e2b0d87, workspace cluster-page-updates @ 469b04b2d
+Authored: revise @ ui-design 0.1.0 - e2b0d87, workspace main @ d81c18823
+Phases: plan, review-api, revise
 
-> Context changed between draft and revise.
-
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"design","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"469b04b2d","source_repo_branch":"cluster-page-updates","commits_behind_main":0,"commits_ahead_main":369,"main_ref":"main","phases":["draft","revise","revise","revise","respond","revise","revise","revise","revise","revise","respond","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"ui-design","workflow_version":"0.1.0","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":446,"main_ref":"main","phases":["plan","review-api","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
