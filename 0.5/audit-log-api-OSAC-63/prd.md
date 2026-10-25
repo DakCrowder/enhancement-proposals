@@ -33,10 +33,9 @@ actions (organization lifecycle, role changes, IdP configuration, project
 permissions). This first increment captures events from services that
 already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
-- OSAC uses a single shared Keycloak realm, with a Keycloak organization for
-each OSAC tenant. Authentication events (login success/failure, token
-operations, and session events) from that realm are captured for the
-corresponding tenant organization and appear in that tenant's audit trail.
+- Authentication events (login success/failure, token operations, and
+session events) from a tenant's users are attributed to the correct
+organization and appear in that tenant's audit trail.
 [Clarify: D3]
 - Audit records and events forwarded to the audit log must not contain
 password values, token values, private keys, or other credential contents.
