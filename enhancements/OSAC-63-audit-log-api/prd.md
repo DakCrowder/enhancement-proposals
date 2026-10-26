@@ -69,10 +69,8 @@ inheriting the deployment's sovereign jurisdiction. [Clarify: D11]
 
 ## Out of Scope
 
-- Cryptographic integrity verification —
-follow-up Feature under the same Outcome (OSAC-3415). This first
-increment provides append-only immutability; cryptographic
-tamper-evidence is a later increment.
+- Cryptographic integrity verification is deferred to follow-up Feature
+OSAC-3415.
 - Fail-closed behavior when audit event capture or delivery is unavailable
 — follow-up Feature. This increment is fail-open: platform actions may
 proceed when audit events cannot be captured or delivered.
