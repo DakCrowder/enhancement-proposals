@@ -59,8 +59,7 @@ no actor filter is set and remain queryable through other filters.
 [Clarify: D7, D9] [User]
 - API-level append-only storage — no API exposes update or delete of
 audit records. This does not protect against direct database access or
-privileged operator intervention; cryptographic tamper-evidence that
-covers storage-level integrity is deferred (see Out of Scope).
+privileged operator intervention.
 - Audit-of-audit: Access to audit data by every principal is itself
 recorded. [Clarify: D9]
 - Data residency: audit data is co-located with the platform deployment,
