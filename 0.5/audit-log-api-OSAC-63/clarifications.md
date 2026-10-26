@@ -65,6 +65,13 @@ OSAC-6154 slips, the audit log feature is blocked.
 OSAC-6154 (actor attribution in Fulfillment Events) is a hard
 prerequisite for the audit log. The feature will not ship without it.
 
+#### Superseding decision (User, 2026-10-26)
+
+For 0.5, audit event capture and query do not wait for OSAC-6154. Only
+Keycloak authentication records carry actor identity; all other audit
+records have an empty actor. OSAC-6154 remains required for actor
+attribution on resource lifecycle events. [User]
+
 ---
 
 ### R1.Q3: Keycloak authentication event capture for 0.5

@@ -33,18 +33,17 @@ actions (organization lifecycle, role changes, IdP configuration, project
 permissions). This first increment captures events from services that
 already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
-- Desired-state request records identify who requested each change and
-whether it was accepted. Significant platform actions and completion or
-failure outcomes, including known reasons, are recorded; where available,
-outcomes identify the desired-state revision being processed. Outcomes
-are linked to requests when that relationship is known. Some lifecycle
-outcome records have no actor because their contributing requests cannot
-always be determined; do not assume every reconciliation has a single
-initiating user. [User]
-- Authentication events (login success/failure, token operations, and
-session events) from a tenant's users are attributed to the correct
-organization and appear in that tenant's audit trail.
-[Clarify: D3]
+- Desired-state request records indicate whether each change was accepted.
+Significant platform actions and completion or failure outcomes, including
+known reasons, are recorded; where available, outcomes identify the
+desired-state revision being processed. Outcomes are linked to requests
+when that relationship is known. [User]
+- Keycloak authentication events (login success/failure, token operations,
+and session events) from a tenant's users are attributed to the correct
+organization, identify the user as the actor, and appear in that tenant's
+audit trail. [Clarify: D3]
+- Only Keycloak authentication events have actor attribution in this
+milestone. The actor is empty for all other audit records. [User]
 - Audit records and events forwarded to the audit log must not contain
 password values, token values, private keys, or other credential contents.
 For credential access, the audit record states that access occurred,
@@ -53,10 +52,10 @@ what was accessed, and the outcome without including credential values.
 Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
 principal — Tenant Admins cannot query outside their organization, and
-denied access attempts are recorded. Records without an actor are
+denied access attempts are recorded. Records with an empty actor are
 returned when no actor filter is set and remain queryable through other
-filters; an actor filter matches only records with a known matching actor.
-[Clarify: D7, D9]
+filters. An actor filter matches only Keycloak authentication events with
+a matching actor. [Clarify: D7, D9] [User]
 - API-level append-only storage — no API exposes update or delete of
 audit records. This does not protect against direct database access or
 privileged operator intervention; cryptographic tamper-evidence that
@@ -72,8 +71,10 @@ production-hardened. [Clarify: D1]
 
 ## Out of Scope
 
-- Actor attribution for resource lifecycle events is deferred until
-OSAC-6154 delivers it. [User]
+- Actor attribution for non-Keycloak audit events is out of scope for this
+milestone; those events are still captured and queryable with an empty
+actor. OSAC-6154 is required for actor attribution on resource lifecycle
+events. [User]
 - Cryptographic integrity verification —
 follow-up Feature under the same Outcome (OSAC-3415). This first
 increment provides append-only immutability; cryptographic
@@ -114,6 +115,9 @@ to a post-Dev-Preview milestone. Functional correctness is the bar for
 Cloud Infrastructure Admin and Tenant User do not have audit log access
 in this milestone. [Clarify: D6]
 
+Only Keycloak authentication events include an actor in this milestone;
+the actor is empty for all other audit records. [User]
+
 ### Cloud Provider Admin
 
 - As a Cloud Provider Admin, I want to query audit events across all
@@ -133,16 +137,16 @@ tenants' data. [Clarify: D9]
 available events from my organization — using the filters defined in In
 Scope — so that I can investigate incidents and track changes without
 requesting platform operator assistance.
-- As a Tenant Admin, I want desired-state request records to identify who
-submitted each change and whether it was accepted, and lifecycle events
-to show significant changes, outcomes, and known reasons, so that I can
-understand what happened after a request. Where available, lifecycle
-events identify the desired-state revision being processed; outcomes link
-to requests only when that relationship is known. [User]
+- As a Tenant Admin, I want desired-state request records to show whether
+each change was accepted, and lifecycle events to show significant
+changes, outcomes, and known reasons, so that I can understand what
+happened after a request. Where available, lifecycle events identify the
+desired-state revision being processed; outcomes link to requests only
+when that relationship is known. [User]
 - As a Tenant Admin, I want authentication events (login success/failure,
 token issuance, session events) from my organization's users to appear
-in the audit trail so that I have complete visibility into identity
-activity. [Clarify: D3]
+with the user's identity as actor in the audit trail so that I have
+visibility into identity activity. [Clarify: D3] [User]
 
 
 
@@ -164,10 +168,10 @@ platform-wide placement guarantee.
 
 ## Dependencies
 
-- **OSAC-6154:** Audit records for resource lifecycle
-actions must identify the user who initiated the action. Until
-OSAC-6154 delivers actor attribution for resource lifecycle events,
-those audit records cannot attribute actions to users. [Clarify: D2]
+- **OSAC-6154 (non-blocking for 0.5 event capture):** OSAC-6154 is
+required for actor attribution on resource lifecycle events. Until it
+delivers, those records have an empty actor; event capture and query can
+ship without that attribution. [User]
 - **OSAC-983 (satisfied):** The audit log depends on platform event
 delivery infrastructure that is already in place (OSAC-983 is Closed).
 - **Keycloak authentication events:** Authentication events (login,
@@ -185,4 +189,4 @@ Final: revise @ prd 0.11.5 - e2b0d87, workspace main @ d81c18823 (20 behind orig
 
 > Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":20,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise","revise","respond","respond","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":20,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise","revise","respond","respond","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
