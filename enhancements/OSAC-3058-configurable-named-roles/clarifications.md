@@ -384,6 +384,13 @@ Newly onboarded users automatically receive a seeded default role equivalent
 to today's client allowlist; deny-all applies only to failed migration
 mappings.
 
+*Extended during review response (2026-10-26): auto-assignment at
+onboarding and the seeded platform default are unchanged, but Tenant
+Admins may now replace the default role for their tenant with a
+tenant-scoped role (bounded by D11); a tenant without an override — or
+one that removes it — falls back to the platform default, never
+deny-all.*
+
 ---
 
 ### R3.Q5: Audit role-context form when a user holds multiple roles
@@ -439,5 +446,8 @@ assumptions or risks:
 - **D11** — Tenant-authored roles bounded by authoring Tenant Admin's capabilities and tenant scope
 - **D12** — Mutual exclusions configurable at platform and tenant level
 - **D13** — Live role edits; guarded deletion
-- **D14** — Auto-assign seeded default role at onboarding; deny-all remains the fallback for any user without an assignment
+- **D14** — Auto-assign seeded default role at onboarding; deny-all remains
+  the fallback for any user without an assignment. Extended during review
+  response: Tenant Admins may replace the default role per tenant with a
+  tenant-scoped role, falling back to the platform default
 - **D15** — Audit records roles held plus the authorizing role

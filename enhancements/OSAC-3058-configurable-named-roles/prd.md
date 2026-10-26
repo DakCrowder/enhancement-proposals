@@ -41,11 +41,17 @@ audit trail cannot attribute actions to roles.
   [Clarify: R3.Q2]
 - Audit role context on user actions: the named roles the user held and the
   specific role that authorized the action [Clarify: R3.Q5]
+- Audit trail coverage of changes to roles and role assignments
+  themselves — creation, capability updates, deletion, grants, and
+  revocations — recording who made each change [User]
 - Role management at runtime through the API, the `osac` CLI, and the web
   console, including live edits to roles that users hold and guarded deletion
   of roles with active assignments [Clarify: R2.Q1, R3.Q3]
-- Automatic assignment of a seeded default role — equivalent to today's
-  self-service allowlist — when a user is onboarded [Clarify: R3.Q4]
+- Automatic assignment of a default role when a user is onboarded: a
+  seeded platform default — equivalent to today's self-service allowlist —
+  which Tenant Admins may replace for their tenant with a tenant-scoped
+  role. Removing a tenant override falls back to the platform default,
+  never to deny-all [Clarify: R3.Q4] [User]
 - Self-service visibility of the roles a user holds [Clarify: R2.Q1]
 
 ## Out of Scope
@@ -83,6 +89,10 @@ audit trail cannot attribute actions to roles.
 - As a Cloud Provider Admin, I want the audit trail to record the named roles
   a user held and the specific role that authorized each action so that I can
   demonstrate role-based access control to auditors. [Clarify: R3.Q5]
+- As a Cloud Provider Admin, I want the audit trail to record changes to
+  named roles and role assignments — who created, updated, or deleted a
+  role, and who granted or revoked one — so that I can trace how a user's
+  access changed and who changed it. [User]
 - As a Cloud Provider Admin, I want to create, update, and delete named roles
   at runtime from the API, CLI, or console so that role management never
   requires a platform redeploy.
@@ -101,6 +111,9 @@ audit trail cannot attribute actions to roles.
 - As a Tenant Admin, I want newly onboarded users to receive a default role
   automatically so that they can use self-service resources on day one
   without a manual grant. [Clarify: R3.Q4]
+- As a Tenant Admin, I want to replace the platform's default role for my
+  tenant with a tenant-scoped role so that my users' day-one access
+  matches my organization's policies. [User]
 
 ### Tenant User
 
@@ -133,8 +146,7 @@ audit trail cannot attribute actions to roles.
 
 ## Provenance
 
-Committed: commit @ prd 0.11.5 - e2b0d87, workspace prd/OSAC-3058 @ 9c329b8
+Authored: respond @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
+Phases: draft, revise, respond
 
-> Authoring phases not recorded this session (commit-time snapshot only).
-
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"commit_only","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"9c329b8","source_repo_branch":"prd/OSAC-3058","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["commit"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
