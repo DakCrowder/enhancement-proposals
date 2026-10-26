@@ -37,9 +37,10 @@ is a follow-up. Captured user-initiated events identify the authenticated
 user who initiated the action as the actor. [Clarify: D8] [User]
 - Desired-state request records indicate whether each change was accepted.
 Significant platform actions and completion or failure outcomes, including
-known reasons, are recorded; where available, outcomes identify the
-desired-state revision being processed. Outcomes are linked to requests
-when that relationship is known. [User]
+known reasons, are recorded even when an outcome has no attributable actor.
+Where available, outcomes identify the desired-state revision being
+processed. Outcomes are linked to requests when that relationship is
+known. [User]
 - Keycloak authentication events (login success/failure, token operations,
 and session events) from a tenant's users are attributed to the correct
 organization, identify the user as the actor, and appear in that tenant's
@@ -53,7 +54,8 @@ Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
 principal — Tenant Admins cannot query outside their organization, and
 denied access attempts are recorded. An actor filter matches records whose
-actor is the requested identity.
+actor is the requested identity. Records without an actor are returned when
+no actor filter is set and remain queryable through other filters.
 [Clarify: D7, D9] [User]
 - API-level append-only storage — no API exposes update or delete of
 audit records. This does not protect against direct database access or
@@ -137,8 +139,8 @@ administrative actions in my organization to identify the authenticated
 user who initiated each action so that I can trace and investigate
 changes. [User]
 - As a Tenant Admin, I want desired-state request records to show whether
-each change was accepted, and lifecycle events to show significant
-changes, outcomes, and known reasons, so that I can understand what
+each change was accepted and lifecycle outcomes to remain visible even
+when an outcome has no attributable actor, so that I can understand what
 happened after a request. Where available, lifecycle events identify the
 desired-state revision being processed; outcomes link to requests only
 when that relationship is known. [User]
@@ -189,4 +191,4 @@ Final: revise @ prd 0.11.5 - 7b2b8de, workspace main @ d81c18823 (20 behind orig
 
 > Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"7b2b8de","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":20,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise","revise","respond","respond","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise","revise","manual-edit","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"7b2b8de","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":20,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise","revise","respond","respond","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise","revise","manual-edit","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->

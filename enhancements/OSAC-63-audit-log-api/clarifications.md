@@ -74,6 +74,12 @@ OSAC-6154 is a blocking dependency for actor attribution on
 Fulfillment lifecycle events; 0.5 lifecycle event coverage must not ship
 without actor attribution. [User]
 
+#### Further clarification (User, 2026-10-26)
+
+Completion and failure outcome events must be included in the audit log
+even when no actor can be attributed to the outcome. User-initiated
+actions remain attributable to their initiating user when known. [User]
+
 ---
 
 ### R1.Q3: Keycloak authentication event capture for 0.5
