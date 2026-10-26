@@ -33,6 +33,14 @@ actions (organization lifecycle, role changes, IdP configuration, project
 permissions). This first increment captures events from services that
 already have audit event support; adding support to remaining services
 is a follow-up. [Clarify: D8]
+- Desired-state request records identify who requested each change and
+whether it was accepted. Significant platform actions and completion or
+failure outcomes, including known reasons, are recorded; where available,
+outcomes identify the desired-state revision being processed. Outcomes
+are linked to requests when that relationship is known. Some lifecycle
+outcome records have no actor because their contributing requests cannot
+always be determined; do not assume every reconciliation has a single
+initiating user. [User]
 - Authentication events (login success/failure, token operations, and
 session events) from a tenant's users are attributed to the correct
 organization and appear in that tenant's audit trail.
@@ -45,7 +53,10 @@ what was accessed, and the outcome without including credential values.
 Supported filters: time range, actor, action type, resource type,
 resource ID, and outcome. Tenant scope is derived from the authenticated
 principal — Tenant Admins cannot query outside their organization, and
-denied access attempts are recorded. [Clarify: D7, D9]
+denied access attempts are recorded. Records without an actor are
+returned when no actor filter is set and remain queryable through other
+filters; an actor filter matches only records with a known matching actor.
+[Clarify: D7, D9]
 - API-level append-only storage — no API exposes update or delete of
 audit records. This does not protect against direct database access or
 privileged operator intervention; cryptographic tamper-evidence that
@@ -118,13 +129,16 @@ tenants' data. [Clarify: D9]
 
 ### Tenant Admin
 
-- As a Tenant Admin, I want to query a chronological audit trail of all
-actions performed within my organization — using the filters defined
-in In Scope — so that I can investigate incidents and track changes
-without requesting platform operator assistance.
-- As a Tenant Admin, I want each audit record to include the actor,
-timestamp, action, target resource, and outcome so that I can see
-exactly who did what.
+- As a Tenant Admin, I want to query a chronological audit trail of
+available events from my organization — using the filters defined in In
+Scope — so that I can investigate incidents and track changes without
+requesting platform operator assistance.
+- As a Tenant Admin, I want desired-state request records to identify who
+submitted each change and whether it was accepted, and lifecycle events
+to show significant changes, outcomes, and known reasons, so that I can
+understand what happened after a request. Where available, lifecycle
+events identify the desired-state revision being processed; outcomes link
+to requests only when that relationship is known. [User]
 - As a Tenant Admin, I want authentication events (login success/failure,
 token issuance, session events) from my organization's users to appear
 in the audit trail so that I have complete visibility into identity
@@ -167,8 +181,8 @@ to the audit log independently of resource lifecycle events.
 ## Provenance
 
 Authored: draft @ prd 0.11.5 - 4164796, workspace main @ f4607b916
-Final: revise @ prd 0.11.5 - e2b0d87, workspace main @ d81c18823
+Final: revise @ prd 0.11.5 - e2b0d87, workspace main @ d81c18823 (20 behind origin/main)
 
 > Context changed between draft and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"d81c18823","source_repo_branch":"main","commits_behind_main":20,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","revise","revise","revise","revise","manual-edit","revise","revise","respond","respond","manual-edit","revise","revise","revise","revise","revise","revise","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":true,"origin_untracked":false} -->
