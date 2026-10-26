@@ -32,6 +32,9 @@ audit trail cannot attribute actions to roles.
 - Named roles composed from catalog capabilities, authored by Cloud Provider
   Admins (platform-scoped) and by Tenant Admins for their own tenant, limited
   to capabilities the authoring admin holds [Clarify: R1.Q1, R3.Q1]
+- Tenant Admins may assign only roles scoped to tenant-level capabilities;
+  provider-defined roles containing platform-admin or cross-tenant
+  capabilities are assignable only by Cloud Provider Admins [User]
 - Provider-composed roles may include administrator-level capabilities, with
   every such grant recorded [Clarify: R2.Q3]
 - Role assignments granting users multiple named roles, with grants and
@@ -40,13 +43,17 @@ audit trail cannot attribute actions to roles.
   platform level and at tenant level, enforced when a role is assigned
   [Clarify: R3.Q2]
 - Audit role context on user actions: the named roles the user held and the
-  specific role that authorized the action [Clarify: R3.Q5]
+  specific role that authorized the action, with deterministic attribution
+  when multiple held roles grant the same capability [Clarify: R3.Q5] [User]
 - Audit trail coverage of changes to roles and role assignments
   themselves — creation, capability updates, deletion, grants, and
   revocations — recording who made each change [User]
 - Role management at runtime through the API, the `osac` CLI, and the web
   console, including live edits to roles that users hold and guarded deletion
   of roles with active assignments [Clarify: R2.Q1, R3.Q3]
+- Preserved break-glass access: each tenant's break-glass account retains
+  identity-provider and role-assignment management when the tenant's IdP is
+  unreachable [User]
 - Automatic assignment of a default role when a user is onboarded: a
   seeded platform default — equivalent to today's self-service allowlist —
   which Tenant Admins may replace for their tenant with a tenant-scoped
@@ -108,6 +115,11 @@ audit trail cannot attribute actions to roles.
 - As a Tenant Admin, I want to assign provider-defined and tenant-scoped
   roles to users in my tenant so that each user's access is explicit and
   reviewable. [Clarify: R1.Q1]
+- As a Tenant Admin, I want my tenant's break-glass account (the account
+  holding today's tenant-idp-manager role) to keep managing identity
+  providers and role assignments when my tenant's IdP is unreachable, so
+  that an IdP outage never locks my organization out of recovering
+  access. [User]
 - As a Tenant Admin, I want newly onboarded users to receive a default role
   automatically so that they can use self-service resources on day one
   without a manual grant. [Clarify: R3.Q4]
@@ -147,6 +159,6 @@ audit trail cannot attribute actions to roles.
 ## Provenance
 
 Authored: respond @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond
+Phases: draft, revise, respond, respond
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->

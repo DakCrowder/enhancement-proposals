@@ -304,6 +304,10 @@ Tenant-authored roles are bounded by the authoring Tenant Admin's own
 capabilities and their tenant's scope; no platform-admin or cross-tenant
 capabilities.
 
+*Extended during review response (2026-10-26): the ceiling also governs
+assignment — Tenant Admins may assign provider-defined roles only when
+those roles contain no platform-admin or cross-tenant capabilities.*
+
 ---
 
 ### R3.Q2: Who configures mutual-exclusion constraints
@@ -368,21 +372,17 @@ granted their first role).
 #### Answer
 
 The tenant onboarding/user-creation flow assigns a seeded default role
-(equivalent to today's client allowlist) automatically. Deny-all applies only
-to users whose grants fail to map during migration.
+(equivalent to today's client allowlist) automatically.
 
 #### Impact
 
 The PRD preserves frictionless onboarding (new users are productive
-immediately with baseline self-service) and avoids the JIT deadlock. Deny-all
-is the fallback state for unmapped users after cutover, not the onboarding
-default.
+immediately with baseline self-service) and avoids the JIT deadlock.
 
 #### Decision (D14)
 
 Newly onboarded users automatically receive a seeded default role equivalent
-to today's client allowlist; deny-all applies only to failed migration
-mappings.
+to today's client allowlist.
 
 *Extended during review response (2026-10-26): auto-assignment at
 onboarding and the seeded platform default are unchanged, but Tenant
@@ -416,6 +416,12 @@ multi-role context.
 Audit events record the union of named roles held plus the specific
 authorizing role for the action.
 
+*Extended during review response (2026-10-26): when several held roles
+grant the capability that authorized an action, attribution must be
+deterministic — a single defined authorizing role or all matching roles
+recorded — so audit attribution is stable; the selection mechanism is a
+design concern.*
+
 ---
 
 ## Remaining Gaps
@@ -423,8 +429,6 @@ authorizing role for the action.
 None — all identified gaps are resolved. Items to carry into the PRD as
 assumptions or risks:
 
-- Hard cutover (D7) interacts with the fact that OSAC does not currently
-  support in-place upgrades; state as data-migration behavior.
 - D8 (admin capabilities composable) heightens the importance of audited
   grants and the D11 tenant ceiling; the PRD should call out both.
 - The JIT provisioning flow depends on some method remaining callable by
@@ -447,7 +451,8 @@ assumptions or risks:
 - **D12** — Mutual exclusions configurable at platform and tenant level
 - **D13** — Live role edits; guarded deletion
 - **D14** — Auto-assign seeded default role at onboarding; deny-all remains
-  the fallback for any user without an assignment. Extended during review
+  the fallback for a user with no assignment. Extended during review
   response: Tenant Admins may replace the default role per tenant with a
-  tenant-scoped role, falling back to the platform default
+  tenant-scoped role; a tenant without an override receives the platform
+  default
 - **D15** — Audit records roles held plus the authorizing role
