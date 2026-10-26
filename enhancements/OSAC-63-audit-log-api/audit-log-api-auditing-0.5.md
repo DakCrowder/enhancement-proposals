@@ -5,6 +5,7 @@
 | --------- | ------------------------------------------------------ |
 | Author(s) | Elkana Hendler                                         |
 | Jira      | [OSAC-63](https://redhat.atlassian.net/browse/OSAC-63) |
+| Milestone | 0.5 (Dev Preview)                                      |
 | Date      | 2026-10-20                                             |
 
 
