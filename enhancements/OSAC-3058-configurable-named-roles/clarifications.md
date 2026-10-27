@@ -223,6 +223,10 @@ for tenant-authored roles (D1) remains to be resolved — see Round 3.
 Platform-admin capabilities are composable into custom roles by Cloud
 Provider Admins; grants are audited.
 
+*Superseded in part during revision (2026-10-27): composability is
+unchanged, but the audited-grants requirement is deferred with the other
+audit-trail requirements while OSAC-63 is in flight (see D9).*
+
 ---
 
 ### R2.Q4: Sequencing against the audit log dependency (OSAC-63)
@@ -248,6 +252,11 @@ named dependency rather than a blocker.
 
 Deliver the role-context contract on existing surfaces; full audit-log
 integration completes when OSAC-63 lands.
+
+*Superseded during revision (2026-10-27): audit-trail requirements — role
+context on user actions and audit coverage of role/assignment changes — are
+out of scope for this feature while OSAC-63 is in flight; they land with
+OSAC-63.*
 
 ---
 
@@ -422,6 +431,9 @@ deterministic — a single defined authorizing role or all matching roles
 recorded — so audit attribution is stable; the selection mechanism is a
 design concern.*
 
+*Superseded during revision (2026-10-27): audit role-context requirements
+are out of scope for this feature while OSAC-63 is in flight (see D9).*
+
 ---
 
 ## Remaining Gaps
@@ -444,8 +456,11 @@ assumptions or risks:
 - **D6** — First deliverable includes API, CLI, and UI
 - **D7** — ~~Hard cutover at upgrade~~ Superseded during draft revision: no
   production deployments exist, so no grant migration is required
-- **D8** — Platform-admin capabilities composable by CPA; grants audited
-- **D9** — Deliver role-context contract now; full OSAC-63 audit integration later
+- **D8** — Platform-admin capabilities composable by CPA; ~~grants audited~~
+  audit of grants deferred to OSAC-63 during revision (2026-10-27)
+- **D9** — ~~Deliver role-context contract now; full OSAC-63 audit integration
+  later~~ Superseded during revision (2026-10-27): audit-trail requirements
+  out of scope while OSAC-63 is in flight
 - **D10** — PRD scopes the authorization outcome, not the policy engine
 - **D11** — Tenant-authored roles bounded by authoring Tenant Admin's capabilities and tenant scope
 - **D12** — Mutual exclusions configurable at platform and tenant level
@@ -455,4 +470,5 @@ assumptions or risks:
   response: Tenant Admins may replace the default role per tenant with a
   tenant-scoped role; a tenant without an override receives the platform
   default
-- **D15** — Audit records roles held plus the authorizing role
+- **D15** — ~~Audit records roles held plus the authorizing role~~ Superseded
+  during revision (2026-10-27): out of scope while OSAC-63 is in flight

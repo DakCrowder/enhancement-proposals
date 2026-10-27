@@ -15,14 +15,12 @@ self-service allowlist, but the roles themselves are built into the service:
 no administrator can create, compose, or change a role at runtime, and adding
 one requires a platform redeploy. Compliance-driven deployments need to model
 documented personas such as ISSO, Auditor, and System Owner as specific
-compositions of granular capabilities, enforce that conflicting roles are
-never held by the same person, and show in the audit trail which named role
-authorized each action — none of which the fixed role set can express. The
-existing Role and RoleBinding APIs are descriptive only; they do not
+compositions of granular capabilities and enforce that conflicting roles are
+never held by the same person — none of which the fixed role set can express.
+The existing Role and RoleBinding APIs are descriptive only; they do not
 influence authorization decisions. Without configurable roles, providers in
 regulated industries cannot satisfy the documented-roles and
-separation-of-duties expectations of NIST 800-171/HIPAA assessments, and the
-audit trail cannot attribute actions to roles.
+separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## In Scope
 
@@ -35,19 +33,13 @@ audit trail cannot attribute actions to roles.
 - Tenant Admins may assign only roles scoped to tenant-level capabilities;
   provider-defined roles containing platform-admin or cross-tenant
   capabilities are assignable only by Cloud Provider Admins [User]
-- Provider-composed roles may include administrator-level capabilities, with
-  every such grant recorded [Clarify: R2.Q3]
+- Provider-composed roles may include administrator-level capabilities
+  [Clarify: R2.Q3]
 - Role assignments granting users multiple named roles, with grants and
   revocations taking effect on the user's next request [Clarify: R1.Q3, R1.Q5]
 - Separation of duties through configurable mutual exclusions, declared at
   platform level and at tenant level, enforced when a role is assigned
   [Clarify: R3.Q2]
-- Audit role context on user actions: the named roles the user held and the
-  specific role that authorized the action, with deterministic attribution
-  when multiple held roles grant the same capability [Clarify: R3.Q5] [User]
-- Audit trail coverage of changes to roles and role assignments
-  themselves — creation, capability updates, deletion, grants, and
-  revocations — recording who made each change [User]
 - Role management at runtime through the API, the `osac` CLI, and the web
   console, including live edits to roles that users hold and guarded deletion
   of roles with active assignments [Clarify: R2.Q1, R3.Q3]
@@ -63,11 +55,9 @@ audit trail cannot attribute actions to roles.
 
 ## Out of Scope
 
-- How authorization is evaluated internally — the policy-engine mechanism is
-  resolved in the design document [Clarify: R2.Q5]
-- Complete audit-log integration — the role-context contract is delivered on
-  existing activity surfaces, and full integration lands with OSAC-63
-  [Clarify: R2.Q4]
+- Audit-trail requirements — role context on user actions and coverage of
+  changes to roles and role assignments — out of scope while OSAC-63
+  (Activity and Audit Log API) is in flight
 - Fine-grained service-account privilege scoping, including deprivileging the
   template-publisher service account — tracked as OSAC-4386, which builds on
   this capability model
@@ -81,25 +71,18 @@ audit trail cannot attribute actions to roles.
 
 - As a Cloud Provider Admin, I want to define named roles as compositions of
   granular capabilities — for example an "ISSO" role combining cluster
-  read/write, audit-log read-only, and security-policy read/write — so that I
+  read/write and security-policy read/write — so that I
   can model my organization's compliance personas.
 - As a Cloud Provider Admin, I want to compose roles that include
-  administrator-level capabilities when my organization needs them, with every
-  such grant recorded, so that flexibility does not come at the cost of
-  oversight. [Clarify: R2.Q3]
+  administrator-level capabilities when my organization needs them so that
+  role composition is not limited to a predefined subset of capabilities.
+  [Clarify: R2.Q3]
 - As a Cloud Provider Admin, I want to declare named roles mutually exclusive
   — for example ISSO and System Owner — so that no user can hold conflicting
   duties. [Clarify: R3.Q2]
 - As a Cloud Provider Admin, I want to assign and revoke named roles with the
   change taking effect on the user's next request so that access changes apply
   immediately, without re-login or redeployment. [Clarify: R1.Q5]
-- As a Cloud Provider Admin, I want the audit trail to record the named roles
-  a user held and the specific role that authorized each action so that I can
-  demonstrate role-based access control to auditors. [Clarify: R3.Q5]
-- As a Cloud Provider Admin, I want the audit trail to record changes to
-  named roles and role assignments — who created, updated, or deleted a
-  role, and who granted or revoked one — so that I can trace how a user's
-  access changed and who changed it. [User]
 - As a Cloud Provider Admin, I want to create, update, and delete named roles
   at runtime from the API, CLI, or console so that role management never
   requires a platform redeploy.
@@ -141,10 +124,10 @@ audit trail cannot attribute actions to roles.
 
 ## Dependencies
 
-- **OSAC-63 — Activity and Audit Log API:** provides the audit trail that
-  carries role context. This feature delivers the role-context contract on
-  existing activity surfaces; complete integration lands when OSAC-63 ships.
-  [Clarify: R2.Q4]
+- **OSAC-63 — Activity and Audit Log API (in flight):** owns the
+  audit-trail requirements this feature defers — role context on user
+  actions and audit coverage of changes to roles and role assignments.
+  [User]
 - **Existing Role and RoleBinding data model:** the foundation this feature
   builds on; today it is descriptive only and not wired into authorization
   decisions.
@@ -152,13 +135,13 @@ audit trail cannot attribute actions to roles.
   capability model and is blocked until it lands.
 - **OSAC-3018 (HIPAA Compliance Readiness) and OSAC-2889 (EU Sovereignty &
   Compliance Readiness):** compliance outcomes that depend on this feature's
-  named roles and audit role context.
+  named roles; their audit-attribution expectations are met through OSAC-63.
 
 ---
 
 ## Provenance
 
-Authored: respond @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond
+Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
+Phases: draft, revise, respond, respond, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
