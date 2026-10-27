@@ -89,6 +89,10 @@ whose capability authorized the action).
 Users can hold multiple named roles; separation of duties is enforced via
 configurable mutual-exclusion constraints checked at assignment time.
 
+*Superseded in part during revision (2026-10-27): users may still hold
+multiple named roles, but mutual-exclusion constraints and assignment-time
+denial were removed from the PRD at the author's instruction (see D12).*
+
 ---
 
 ### R1.Q4: Capability atom granularity
@@ -340,6 +344,10 @@ constraints with user stories for each persona.
 Mutual-exclusion constraints are configurable at platform level (CPA) and
 tenant level (Tenant Admin, tenant-scoped roles only).
 
+*Superseded during revision (2026-10-27): mutual-exclusion constraints were
+removed from the PRD at the author's instruction; roles may be freely
+combined with no conflict rules declared or enforced.*
+
 ---
 
 ### R3.Q3: Role lifecycle — edit in use, delete with assignments
@@ -450,7 +458,9 @@ assumptions or risks:
 
 - **D1** — Tenant Admins can author tenant-scoped custom named roles
 - **D2** — "Compliance Admin" is a Cloud Provider Admin responsibility; canonical personas only
-- **D3** — Users can hold multiple roles; SoD via configurable mutual exclusions
+- **D3** — Users can hold multiple roles; ~~SoD via configurable mutual
+  exclusions~~ mutual-exclusion enforcement removed during revision
+  (2026-10-27)
 - **D4** — Capability atoms are verb × resource-type pairs
 - **D5** — Grant/revocation takes effect on the next request
 - **D6** — First deliverable includes API, CLI, and UI
@@ -463,7 +473,9 @@ assumptions or risks:
   out of scope while OSAC-63 is in flight
 - **D10** — PRD scopes the authorization outcome, not the policy engine
 - **D11** — Tenant-authored roles bounded by authoring Tenant Admin's capabilities and tenant scope
-- **D12** — Mutual exclusions configurable at platform and tenant level
+- **D12** — ~~Mutual exclusions configurable at platform and tenant level~~
+  Superseded during revision (2026-10-27): removed from the PRD at the
+  author's instruction
 - **D13** — Live role edits; guarded deletion
 - **D14** — Auto-assign seeded default role at onboarding; deny-all remains
   the fallback for a user with no assignment. Extended during review

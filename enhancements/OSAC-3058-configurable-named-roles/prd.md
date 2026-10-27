@@ -15,8 +15,8 @@ self-service allowlist, but the roles themselves are built into the service:
 no administrator can create, compose, or change a role at runtime, and adding
 one requires a platform redeploy. Compliance-driven deployments need to model
 documented personas such as ISSO, Auditor, and System Owner as specific
-compositions of granular capabilities and enforce that conflicting roles are
-never held by the same person — none of which the fixed role set can express.
+compositions of granular capabilities — none of which the fixed role set can
+express.
 The existing Role and RoleBinding APIs are descriptive only; they do not
 influence authorization decisions. Without configurable roles, providers in
 regulated industries cannot satisfy the documented-roles and
@@ -37,9 +37,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   [Clarify: R2.Q3]
 - Role assignments granting users multiple named roles, with grants and
   revocations taking effect on the user's next request [Clarify: R1.Q3, R1.Q5]
-- Separation of duties through configurable mutual exclusions, declared at
-  platform level and at tenant level, enforced when a role is assigned
-  [Clarify: R3.Q2]
 - Role management at runtime through the API, the `osac` CLI, and the web
   console, including live edits to roles that users hold and guarded deletion
   of roles with active assignments [Clarify: R2.Q1, R3.Q3]
@@ -77,9 +74,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   administrator-level capabilities when my organization needs them so that
   role composition is not limited to a predefined subset of capabilities.
   [Clarify: R2.Q3]
-- As a Cloud Provider Admin, I want to declare named roles mutually exclusive
-  — for example ISSO and System Owner — so that no user can hold conflicting
-  duties. [Clarify: R3.Q2]
 - As a Cloud Provider Admin, I want to assign and revoke named roles with the
   change taking effect on the user's next request so that access changes apply
   immediately, without re-login or redeployment. [Clarify: R1.Q5]
@@ -92,9 +86,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 - As a Tenant Admin, I want to author tenant-scoped named roles from the
   capabilities I hold so that I can tailor access for my organization's users
   without provider involvement. [Clarify: R1.Q1, R3.Q1]
-- As a Tenant Admin, I want to declare mutual exclusions among my tenant's
-  roles so that separation of duties reflects my organization's policies.
-  [Clarify: R3.Q2]
 - As a Tenant Admin, I want to assign provider-defined and tenant-scoped
   roles to users in my tenant so that each user's access is explicit and
   reviewable. [Clarify: R1.Q1]
@@ -142,6 +133,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise
+Phases: draft, revise, respond, respond, revise, manual-edit, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise"],"authoring_modes":["skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
