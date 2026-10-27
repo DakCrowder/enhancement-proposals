@@ -59,7 +59,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   role composition is not limited to a predefined subset of methods.
   [Clarify: R2.Q3]
 - As a Cloud Provider Admin, when I make changes to role assignments, I need
-  those to propagate and apply automatically so that my users don't need 
+  those to propagate and apply automatically so that my users don't need
   to do anything extra. [Clarify: R1.Q5]
 - As a Cloud Provider Admin, I want edits to a role to apply to all users
   that has the role so that changes take effect everywhere at once. [Clarify: R3.Q3]
@@ -79,14 +79,14 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 - As a Tenant Admin, I want to author tenant-scoped named roles from the
   methods I hold so that I can tailor access for my organization's users. [Clarify: R1.Q1, R3.Q1]
-- As a Tenant Admin, I want to assign one or more roles to users in my tenant 
-  so that each user's access — the union of their held roles' methods — 
+- As a Tenant Admin, I want to assign one or more roles to users in my tenant
+  so that each user's access — the union of their held roles' methods —
   is explicit and reviewable. [Clarify: R1.Q1, R1.Q3]
 - As a Tenant Admin, I want to be able to easily select from a list of
   predefined roles that represent capabilities (such as Cluster Creator or VM Viewer)
   so I can easily give my users access to what they need.
-- As a Tenant Admin, I want newly onboarded users to receive a configurble
-  default role automatically so that they can use self-service resources on 
+- As a Tenant Admin, I want newly onboarded users to receive a configurable
+  default role automatically so that they can use self-service resources on
   day one without a manual grant. [Clarify: R3.Q4]
 
 ### Tenant User
