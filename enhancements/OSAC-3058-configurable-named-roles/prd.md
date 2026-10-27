@@ -14,7 +14,7 @@ and tenant-idp-manager — and every authenticated user receives a fixed
 self-service allowlist, but the roles themselves are built into the service:
 no administrator can create, compose, or change a role at runtime, and adding
 one requires a platform redeploy. Compliance-driven deployments need to model
-documented personas such as ISSO, Auditor, and System Owner as specific sets
+documented personas such as ISSO (Information System Security Officer), Auditor, and System Owner as specific sets
 of full gRPC methods — none of which the fixed role set can
 express.
 The existing Role and RoleBinding APIs are descriptive only; they do not
@@ -29,30 +29,10 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   `osac.public.v1.Clusters/Create`, not bare verbs like "get" or "list" —
   where each full method is the grantable unit [Clarify: R1.Q4]
 - Named roles composed as sets of catalog methods, authored by Cloud Provider
-  Admins (platform-scoped) and by Tenant Admins for their own tenant, limited
-  to methods the authoring admin holds [Clarify: R1.Q1, R3.Q1]
-- Privilege-escalation denial: no user may assign another user
-  permissions beyond those they themselves hold — role assignment is
-  bounded by the assigner's own methods [User]
-- Tenant Admins may assign only roles scoped to tenant-level methods;
-  provider-defined roles containing platform-admin or cross-tenant methods
-  are assignable only by Cloud Provider Admins [User]
-- Provider-composed roles may include administrator-level methods
-  [Clarify: R2.Q3]
-- Role assignments granting users multiple named roles, with grants and
-  revocations taking effect on the user's next request [Clarify: R1.Q3, R1.Q5]
+  Admins (platform-scoped) and by Tenant Admins for their own tenant
+  [Clarify: R1.Q1]
 - Role management at runtime through the API, the `osac` CLI, and the web
-  console, including live edits to roles that users hold and guarded deletion
-  of roles with active assignments [Clarify: R2.Q1, R3.Q3]
-- Preserved break-glass access: each tenant's break-glass account retains
-  identity-provider and role-assignment management when the tenant's IdP is
-  unreachable [User]
-- Automatic assignment of a default role when a user is onboarded: a
-  seeded platform default — equivalent to today's self-service allowlist —
-  which Tenant Admins may replace for their tenant with a tenant-scoped
-  role. Removing a tenant override falls back to the platform default,
-  never to deny-all [Clarify: R3.Q4] [User]
-- Self-service visibility of the roles a user holds [Clarify: R2.Q1]
+  console [Clarify: R2.Q1]
 
 ## Out of Scope
 
@@ -73,37 +53,41 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 - As a Cloud Provider Admin, I want to define named roles as sets of full
   gRPC methods — for example an "ISSO" role combining the cluster read/write
   methods and the security-policy read/write methods — so that I can model
-  my organization's compliance personas.
+  my organization's personas to what permissions they need.
 - As a Cloud Provider Admin, I want to compose roles that include
   administrator-level methods when my organization needs them so that
   role composition is not limited to a predefined subset of methods.
   [Clarify: R2.Q3]
-- As a Cloud Provider Admin, I want to assign and revoke named roles with the
-  change taking effect on the user's next request so that access changes apply
-  immediately, without re-login or redeployment. [Clarify: R1.Q5]
-- As a Cloud Provider Admin, I want to create, update, and delete named roles
-  at runtime from the API, CLI, or console so that role management never
-  requires a platform redeploy.
+- As a Cloud Provider Admin, when I make changes to role assignments, I need
+  those to propagate and apply automatically so that my users don't need 
+  to do anything extra. [Clarify: R1.Q5]
+- As a Cloud Provider Admin, I want edits to a role to apply to all users
+  that has the role so that changes take effect everywhere at once. [Clarify: R3.Q3]
+- As a Cloud Provider Admin, I want deletion of a role with active
+  assignments to be guarded until those assignments are removed so that
+  no user loses access as a side effect of a role cleanup. [Clarify: R3.Q3]
+- As a Cloud Provider Admin, I want any role assignment to be bounded by
+  the permissions its assigner holds so that access is always delegated
+  from real authority and can never be escalated through assignment.
+  [User]
+- As a Cloud Provider Admin, I want tenant role assignments to stay scoped
+  within their own tenant — never crossing tenant or provider-admin method
+  boundaries — so that tenant-level administration cannot grant access
+  across tenants or into platform administration. [User]
 
 ### Tenant Admin
 
 - As a Tenant Admin, I want to author tenant-scoped named roles from the
-  methods I hold so that I can tailor access for my organization's users
-  without provider involvement. [Clarify: R1.Q1, R3.Q1]
-- As a Tenant Admin, I want to assign provider-defined and tenant-scoped
-  roles to users in my tenant so that each user's access is explicit and
-  reviewable. [Clarify: R1.Q1]
-- As a Tenant Admin, I want my tenant's break-glass account (the account
-  holding today's tenant-idp-manager role) to keep managing identity
-  providers and role assignments when my tenant's IdP is unreachable, so
-  that an IdP outage never locks my organization out of recovering
-  access. [User]
-- As a Tenant Admin, I want newly onboarded users to receive a default role
-  automatically so that they can use self-service resources on day one
-  without a manual grant. [Clarify: R3.Q4]
-- As a Tenant Admin, I want to replace the platform's default role for my
-  tenant with a tenant-scoped role so that my users' day-one access
-  matches my organization's policies. [User]
+  methods I hold so that I can tailor access for my organization's users. [Clarify: R1.Q1, R3.Q1]
+- As a Tenant Admin, I want to assign one or more roles to users in my tenant 
+  so that each user's access — the union of their held roles' methods — 
+  is explicit and reviewable. [Clarify: R1.Q1, R1.Q3]
+- As a Tenant Admin, I want to be able to easily select from a list of
+  predefined roles that represent capabilities (such as Cluster Creator or VM Viewer)
+  so I can easily give my users access to what they need.
+- As a Tenant Admin, I want newly onboarded users to receive a configurble
+  default role automatically so that they can use self-service resources on 
+  day one without a manual grant. [Clarify: R3.Q4]
 
 ### Tenant User
 
@@ -119,10 +103,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## Dependencies
 
-- **OSAC-63 — Activity and Audit Log API (in flight):** owns the
-  audit-trail requirements this feature defers — role context on user
-  actions and audit coverage of changes to roles and role assignments.
-  [User]
 - **Existing Role and RoleBinding data model:** the foundation this feature
   builds on; today it is descriptive only and not wired into authorization
   decisions.
@@ -137,6 +117,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise
+Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise, manual-edit, revise, manual-edit
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise","manual-edit","revise","manual-edit"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
