@@ -31,6 +31,9 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 - Named roles composed as sets of catalog methods, authored by Cloud Provider
   Admins (platform-scoped) and by Tenant Admins for their own tenant, limited
   to methods the authoring admin holds [Clarify: R1.Q1, R3.Q1]
+- Privilege-escalation denial: no user may assign another user
+  permissions beyond those they themselves hold — role assignment is
+  bounded by the assigner's own methods [User]
 - Tenant Admins may assign only roles scoped to tenant-level methods;
   provider-defined roles containing platform-admin or cross-tenant methods
   are assignable only by Cloud Provider Admins [User]
@@ -111,7 +114,8 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ## Assumptions
 
 - The method catalog's first deliverable covers user-facing public API
-  methods; methods governing internal service-to-service calls may be represented in the catalog, but are are not the focus of this feature.
+  methods; methods governing internal service-to-service calls may be
+  represented in the catalog, but are not the focus of this feature.
 
 ## Dependencies
 
@@ -133,6 +137,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise
+Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
