@@ -119,6 +119,11 @@ user-visible listing requirement.
 Capability atoms are verb × resource-type pairs covering the standard method
 set per resource type.
 
+*Superseded during revision (2026-10-27): per reviewer feedback, role atoms
+are the public API's full gRPC methods — complete service-qualified
+references such as `osac.public.v1.Clusters/List` — not verb × resource-type
+pairs or bare verbs. A role is a set of full gRPC methods.*
+
 ---
 
 ### R1.Q5: Assignment effect latency
@@ -461,7 +466,9 @@ assumptions or risks:
 - **D3** — Users can hold multiple roles; ~~SoD via configurable mutual
   exclusions~~ mutual-exclusion enforcement removed during revision
   (2026-10-27)
-- **D4** — Capability atoms are verb × resource-type pairs
+- **D4** — ~~Capability atoms are verb × resource-type pairs~~ Superseded
+  during revision (2026-10-27): role atoms are the public API's full gRPC
+  methods
 - **D5** — Grant/revocation takes effect on the next request
 - **D6** — First deliverable includes API, CLI, and UI
 - **D7** — ~~Hard cutover at upgrade~~ Superseded during draft revision: no

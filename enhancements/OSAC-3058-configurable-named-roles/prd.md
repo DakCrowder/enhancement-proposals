@@ -14,8 +14,8 @@ and tenant-idp-manager — and every authenticated user receives a fixed
 self-service allowlist, but the roles themselves are built into the service:
 no administrator can create, compose, or change a role at runtime, and adding
 one requires a platform redeploy. Compliance-driven deployments need to model
-documented personas such as ISSO, Auditor, and System Owner as specific
-compositions of granular capabilities — none of which the fixed role set can
+documented personas such as ISSO, Auditor, and System Owner as specific sets
+of full gRPC methods — none of which the fixed role set can
 express.
 The existing Role and RoleBinding APIs are descriptive only; they do not
 influence authorization decisions. Without configurable roles, providers in
@@ -24,16 +24,17 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## In Scope
 
-- A granular capability catalog covering OSAC public API resource types,
-  organized as the standard operations (get, list, create, update, delete,
-  watch) per resource type [Clarify: R1.Q4]
-- Named roles composed from catalog capabilities, authored by Cloud Provider
+- A catalog of the OSAC public API's full gRPC methods — complete
+  service-qualified references such as `osac.public.v1.Clusters/List` and
+  `osac.public.v1.Clusters/Create`, not bare verbs like "get" or "list" —
+  where each full method is the grantable unit [Clarify: R1.Q4]
+- Named roles composed as sets of catalog methods, authored by Cloud Provider
   Admins (platform-scoped) and by Tenant Admins for their own tenant, limited
-  to capabilities the authoring admin holds [Clarify: R1.Q1, R3.Q1]
-- Tenant Admins may assign only roles scoped to tenant-level capabilities;
-  provider-defined roles containing platform-admin or cross-tenant
-  capabilities are assignable only by Cloud Provider Admins [User]
-- Provider-composed roles may include administrator-level capabilities
+  to methods the authoring admin holds [Clarify: R1.Q1, R3.Q1]
+- Tenant Admins may assign only roles scoped to tenant-level methods;
+  provider-defined roles containing platform-admin or cross-tenant methods
+  are assignable only by Cloud Provider Admins [User]
+- Provider-composed roles may include administrator-level methods
   [Clarify: R2.Q3]
 - Role assignments granting users multiple named roles, with grants and
   revocations taking effect on the user's next request [Clarify: R1.Q3, R1.Q5]
@@ -57,22 +58,22 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   (Activity and Audit Log API) is in flight
 - Fine-grained service-account privilege scoping, including deprivileging the
   template-publisher service account — tracked as OSAC-4386, which builds on
-  this capability model
+  this method-based model
 - Per-request role context ("acting as") — a user's held roles apply as-is to
   every action
-- Role inheritance or nesting — roles are flat compositions of capabilities
+- Role inheritance or nesting — roles are flat sets of methods
 
 ## User Stories
 
 ### Cloud Provider Admin
 
-- As a Cloud Provider Admin, I want to define named roles as compositions of
-  granular capabilities — for example an "ISSO" role combining cluster
-  read/write and security-policy read/write — so that I
-  can model my organization's compliance personas.
+- As a Cloud Provider Admin, I want to define named roles as sets of full
+  gRPC methods — for example an "ISSO" role combining the cluster read/write
+  methods and the security-policy read/write methods — so that I can model
+  my organization's compliance personas.
 - As a Cloud Provider Admin, I want to compose roles that include
-  administrator-level capabilities when my organization needs them so that
-  role composition is not limited to a predefined subset of capabilities.
+  administrator-level methods when my organization needs them so that
+  role composition is not limited to a predefined subset of methods.
   [Clarify: R2.Q3]
 - As a Cloud Provider Admin, I want to assign and revoke named roles with the
   change taking effect on the user's next request so that access changes apply
@@ -84,7 +85,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ### Tenant Admin
 
 - As a Tenant Admin, I want to author tenant-scoped named roles from the
-  capabilities I hold so that I can tailor access for my organization's users
+  methods I hold so that I can tailor access for my organization's users
   without provider involvement. [Clarify: R1.Q1, R3.Q1]
 - As a Tenant Admin, I want to assign provider-defined and tenant-scoped
   roles to users in my tenant so that each user's access is explicit and
@@ -109,9 +110,8 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## Assumptions
 
-- The capability catalog's first deliverable covers user-facing public API
-  resource types; capabilities governing internal service-to-service calls
-  are not part of this feature.
+- The method catalog's first deliverable covers user-facing public API
+  methods; methods governing internal service-to-service calls may be represented in the catalog, but are are not the focus of this feature.
 
 ## Dependencies
 
@@ -123,7 +123,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   builds on; today it is descriptive only and not wired into authorization
   decisions.
 - **OSAC-4386 — Service Account Privilege Scoping:** builds on this feature's
-  capability model and is blocked until it lands.
+  method-based model and is blocked until it lands.
 - **OSAC-3018 (HIPAA Compliance Readiness) and OSAC-2889 (EU Sovereignty &
   Compliance Readiness):** compliance outcomes that depend on this feature's
   named roles; their audit-attribution expectations are met through OSAC-63.
@@ -133,6 +133,6 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 ## Provenance
 
 Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise, manual-edit, revise
+Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
