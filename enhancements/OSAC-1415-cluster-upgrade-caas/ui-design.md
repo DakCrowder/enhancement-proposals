@@ -35,14 +35,7 @@ The Clusters table and configuration card show the observed control-plane **Curr
 
 **Upgrade cluster** opens a compact dialog with a read-only **Current version** and one required **Target version** selector. The selector displays `ClusterVersion.spec.version`, marks deprecated entries, and keeps the selected catalog entry's `id` as its value. It has no component picker, node-set version list, or multi-hop builder.
 
-Use the `semver` v7 package as a direct dependency of `@osac/ui-components`, with `@types/semver` for TypeScript. A pure helper shared by the rail and dialog applies these basic checks:
-
-1. Request `ClusterVersions.List` with `CLUSTER_VERSION_ACTIVE_LIST_FILTER`, which includes only enabled ACTIVE or DEPRECATED entries.
-2. Parse each entry's `spec.version`, the observed control-plane version, and every observed node-set version with `semver.parse(value, { loose: false })`. Omit an invalid catalog version. If any observed version is missing or cannot be parsed, disable the upgrade with a reason.
-3. Keep a target only if `semver.gt(target, observedControlPlane)`. Compare version numbers, never catalog names. Direct comparison also handles catalog prereleases by SemVer precedence; do not use range matching to silently omit them.
-4. For every node set, require `semver.gte(target, observedNodeSet)`, the same major version, and `target.minor - observedNodeSet.minor <= 3`. This checks the temporary skew after the control plane moves but before node sets catch up. For example, a 4.20 control plane with a 4.17 node set cannot offer 4.21: that node set would briefly be four minors behind. See the [HCP skew policy](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/hosted_control_planes/hcp-updating).
-
-Sort the remaining choices newest first with `semver.rcompare`; this changes their order, not their eligibility.
+Use `semver` (`parse`, `gt`, `gte`, `rcompare`) in a shared helper, with `semver` and `@types/semver` added to `@osac/ui-components`. Fetch enabled ACTIVE/DEPRECATED versions with `CLUSTER_VERSION_ACTIVE_LIST_FILTER`. Skip invalid catalog versions. Offer only versions newer than the observed control plane that do not downgrade a node set or exceed the [same-major, three-minor skew limit](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/hosted_control_planes/hcp-updating/). Compare version strings, not catalog names, and sort newest first. Disable upgrading if an observed version is missing or invalid.
 
 The rail action also needs `CanUpgrade=True` and a cluster state other than `FAILED`, `DELETING`, or `DELETE_FAILED`. `PROGRESSING` alone does not block it. Show a specific disabled reason when admission, observations, or eligible targets are unavailable. The API rechecks admission at submission and remains authoritative.
 
@@ -107,4 +100,4 @@ Final: revise @ ui-design 0.1.0 - 7b2b8de, workspace main @ df9051d31
 
 > Context changed between plan and revise.
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"ui-design","workflow_version":"0.1.0","ai_workflows":"7b2b8de","source_repo":"df9051d31","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":530,"main_ref":"main","phases":["plan","review-api","revise","revise","respond","respond","respond","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"ui-design","workflow_version":"0.1.0","ai_workflows":"7b2b8de","source_repo":"df9051d31","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":530,"main_ref":"main","phases":["plan","review-api","revise","revise","respond","respond","respond","revise","revise"],"authoring_modes":["skill"],"context_changed":true,"origin_untracked":false} -->
