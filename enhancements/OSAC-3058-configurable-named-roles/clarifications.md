@@ -134,20 +134,26 @@ when the user's token refreshes.
 
 #### Answer
 
-Grants and revocations must take effect on the user's next API request,
-without re-login or token refresh.
+Grants and revocations must propagate without requiring re-login, token
+refresh, or redeployment; no next-request guarantee is made, leaving room
+for eventual consistency.
 
 #### Impact
 
-The PRD states immediate-effect as a user-observable requirement
-(revocation before next request). This rules out token-claim-only
-enforcement as sufficient and is a non-functional requirement on the
-authorization path.
+The PRD states propagation without re-login or redeployment as a
+user-observable requirement. This rules out token-claim-only enforcement
+as sufficient and is a non-functional requirement on the authorization
+path.
 
 #### Decision (D5)
 
 Role grant/revocation takes effect on the user's next request (no token
 refresh or re-login required).
+
+*Revised during review response (2026-10-28): the next-request guarantee
+was removed per reviewer feedback to leave room for eventual consistency.
+Grants and revocations must still propagate without re-login or
+redeployment.*
 
 ---
 
@@ -362,20 +368,24 @@ deletes a role with active assignments?
 
 #### Answer
 
-Edits to a role's capability set apply to all holders immediately (next
-request, per D5). Deletion of a role with active assignments is blocked
-until assignments are removed (or auto-revoked with confirmation).
+Edits to a role's capability set apply to all holders without re-login or
+redeployment (per D5). Deletion of a role with active assignments is
+blocked until assignments are removed (or auto-revoked with confirmation).
 
 #### Impact
 
-The PRD's role lifecycle includes live edits with immediate effect and
-guarded deletion. Combined with D5, the lifecycle never requires re-login or
-redeployment.
+The PRD's role lifecycle includes live edits that propagate to all holders
+and guarded deletion. Combined with D5, the lifecycle never requires
+re-login or redeployment.
 
 #### Decision (D13)
 
 Live edit with immediate effect on holders; deletion is guarded until
 assignments are removed or explicitly revoked.
+
+*Revised during review response (2026-10-28): "immediate effect" is
+restated as propagation to all holders without re-login or redeployment,
+matching the revised D5; no next-request guarantee is made.*
 
 ---
 
@@ -469,7 +479,9 @@ assumptions or risks:
 - **D4** — ~~Capability atoms are verb × resource-type pairs~~ Superseded
   during revision (2026-10-27): role atoms are the public API's full gRPC
   methods
-- **D5** — Grant/revocation takes effect on the next request
+- **D5** — ~~Grant/revocation takes effect on the next request~~ Revised
+  during review response (2026-10-28): grant/revocation propagates without
+  re-login or redeployment; eventual consistency acceptable
 - **D6** — First deliverable includes API, CLI, and UI
 - **D7** — ~~Hard cutover at upgrade~~ Superseded during draft revision: no
   production deployments exist, so no grant migration is required
@@ -483,7 +495,9 @@ assumptions or risks:
 - **D12** — ~~Mutual exclusions configurable at platform and tenant level~~
   Superseded during revision (2026-10-27): removed from the PRD at the
   author's instruction
-- **D13** — Live role edits; guarded deletion
+- **D13** — Live role edits; guarded deletion. Revised during review
+  response (2026-10-28): edits propagate to all holders without re-login
+  or redeployment (no next-request guarantee)
 - **D14** — Auto-assign seeded default role at onboarding; deny-all remains
   the fallback for a user with no assignment. Extended during review
   response: Tenant Admins may replace the default role per tenant with a

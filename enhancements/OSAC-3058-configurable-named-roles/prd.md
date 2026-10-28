@@ -62,7 +62,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   those to propagate and apply automatically so that my users don't need
   to do anything extra. [Clarify: R1.Q5]
 - As a Cloud Provider Admin, I want edits to a role to apply to all users
-  that has the role so that changes take effect everywhere at once. [Clarify: R3.Q3]
+  that have the role so that changes take effect everywhere at once. [Clarify: R3.Q3]
 - As a Cloud Provider Admin, I want deletion of a role with active
   assignments to be guarded until those assignments are removed so that
   no user loses access as a side effect of a role cleanup. [Clarify: R3.Q3]
@@ -116,7 +116,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## Provenance
 
-Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise, manual-edit, revise, manual-edit
+Authored: respond @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
+Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise, manual-edit, revise, manual-edit, respond
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise","manual-edit","revise","manual-edit"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise","manual-edit","revise","manual-edit","respond"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
