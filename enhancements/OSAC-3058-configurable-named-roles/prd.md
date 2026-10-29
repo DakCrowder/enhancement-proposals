@@ -33,15 +33,17 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
   [Clarify: R1.Q1]
 - Role management at runtime through the API, the `osac` CLI, and the web
   console [Clarify: R2.Q1]
+- Existing service accounts keeping the access they hold today — accounts
+  such as the managed service accounts authorized through RoleBindings
+  (OSAC-6554, in flight) must continue to work as this feature lands [User]
 
 ## Out of Scope
 
 - Audit-trail requirements — role context on user actions and coverage of
   changes to roles and role assignments — out of scope while OSAC-63
   (Activity and Audit Log API) is in flight
-- Fine-grained service-account privilege scoping, including deprivileging the
-  template-publisher service account — tracked as OSAC-4386, which builds on
-  this method-based model
+- New privilege-scoping capability for existing service accounts
+  keeping those accounts working is in scope (see In Scope)
 - Per-request role context ("acting as") — a user's held roles apply as-is to
   every action
 - Role inheritance or nesting — roles are flat sets of methods
@@ -116,7 +118,7 @@ separation-of-duties expectations of NIST 800-171/HIPAA assessments.
 
 ## Provenance
 
-Authored: respond @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
-Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise, manual-edit, revise, manual-edit, respond
+Authored: revise @ prd 0.11.5 - e2b0d87, workspace main @ 3e4bfdb7b
+Phases: draft, revise, respond, respond, revise, manual-edit, revise, revise, manual-edit, revise, manual-edit, revise, manual-edit, respond, revise
 
-<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise","manual-edit","revise","manual-edit","respond"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
+<!-- ai-workflow-provenance:{"schema_version":1,"provenance_kind":"session","workflow":"prd","workflow_version":"0.11.5","ai_workflows":"e2b0d87","source_repo":"3e4bfdb7b","source_repo_branch":"main","commits_behind_main":0,"commits_ahead_main":0,"main_ref":"main","phases":["draft","revise","respond","respond","revise","manual-edit","revise","revise","manual-edit","revise","manual-edit","revise","manual-edit","respond","revise"],"authoring_modes":["manual","skill"],"context_changed":false,"origin_untracked":false} -->
